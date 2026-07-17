@@ -116,6 +116,13 @@ if(BUILD_TESTING OR NOT DEFINED BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
+# ---- Examples ----
+
+option(BUILD_EXAMPLES "Build example programs" ON)
+if(BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
 # ---- Installation ----
 
 # Set install directories
