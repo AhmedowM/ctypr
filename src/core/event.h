@@ -1,10 +1,10 @@
 #ifndef EVENT_H
 #define EVENT_H
 
-#include "callback.h"
-
 #include <stdint.h>
 #include <stdio.h>
+
+typedef struct Engine Engine; // Forward declaration of Engine struct
 
 typedef enum EngineEvent {
     ENGINE_EVENT_NONE,
@@ -21,7 +21,7 @@ typedef enum EngineEvent {
     ENGINE_EVENT_ERROR
 } EngineEvent;
 
-typedef struct Engine Engine; // Forward declaration of Engine struct
+typedef void (*EngineCallback)(Engine* engine, void* userData); // Callback function type for engine events
 
 /// @brief Convert an EngineEvent to a string representation
 /// @param event The EngineEvent to convert

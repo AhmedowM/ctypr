@@ -11,16 +11,49 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef _WIN32
+#include <windows.h>
+typedef LARGE_INTEGER ctypr_time_t;
+#else
+#include <time.h>
+typedef struct timespec ctypr_time_t;
+#endif
+
 typedef struct Session {
     char text[4096]; // Assuming a maximum length for the text
     size_t length;
     uint32_t currentIndex;
     uint16_t incorrectKeystrokesIndices[4096]; // Array to track incorrect keystrokes
 
-    clock_t segmentStartTime;
-    clock_t segmentEndTime;
-    time_t accumulatedTime;
+    ctypr_time_t segmentStartTime;
+    ctypr_time_t segmentEndTime;
+    int64_t accumulatedTimeMs; // Accumulated time in milliseconds
+    bool isTimingStarted;      // Flag to indicate if timing has started
 } Session;
+
+// Cross-platform high-resolution time functions
+
+static void getCurrentTime(ctypr_time_t* t) {
+#ifdef _WIN32
+    QueryPerformanceCounter(t);
+#else
+    clock_gettime(CLOCK_MONOTONIC, t);
+#endif
+}
+
+static int64_t timeDiffMs(ctypr_time_t* end, ctypr_time_t* start) {
+#ifdef _WIN32
+    static LARGE_INTEGER freq = {0};
+    if (freq.QuadPart == 0) {
+        QueryPerformanceFrequency(&freq);
+    }
+    return (int64_t)((end->QuadPart - start->QuadPart) * 1000LL / freq.QuadPart);
+#else
+    int64_t secDiff = end->tv_sec - start->tv_sec;
+    int64_t nsecDiff = end->tv_nsec - start->tv_nsec;
+    return secDiff * 1000 + nsecDiff / 1000000;
+#endif
+}
 
 // Helper functions
 
@@ -34,10 +67,10 @@ void clearArray(uint16_t* array, size_t size) {
 
 void updateTime(Session* session) {
     if (!session) return;
-    if (session->segmentStartTime == 0) return;
-    session->segmentEndTime = clock();
-    session->accumulatedTime += (session->segmentEndTime - session->segmentStartTime) / CLOCKS_PER_SEC;
-    if (session->accumulatedTime < 0) { session->accumulatedTime = 0; } // Ensure non-negative accumulated time
+    if (!session->isTimingStarted) return;
+    getCurrentTime(&session->segmentEndTime);
+    session->accumulatedTimeMs += timeDiffMs(&session->segmentEndTime, &session->segmentStartTime);
+    if (session->accumulatedTimeMs < 0) { session->accumulatedTimeMs = 0; }
 }
 
 // engine.h
@@ -73,6 +106,7 @@ Engine* engineCreate(EngineMode mode, uint16_t timeout) {
         free(engine);
         return NULL; // Handle memory allocation failure
     }
+    engine->session->isTimingStarted = false;
     clearArray(engine->session->incorrectKeystrokesIndices, 4096);
     return engine;
 }
@@ -110,12 +144,13 @@ void engineStart(Engine *self) {
         }
         self->state = ENGINE_RUNNING;
         self->lastError = ENGINE_ERROR_NONE;
-        strcpy(self->session->text, "The quick brown fox jumps over the lazy dog."); // Placeholder text
+        snprintf(self->session->text, sizeof(self->session->text), "%s", "The quick brown fox jumps over the lazy dog."); // Placeholder text
         self->session->length = strlen(self->session->text);
         self->session->currentIndex = 0;
-        self->session->segmentStartTime = clock();
-        self->session->segmentEndTime = 0;
-        self->session->accumulatedTime = 0;
+        getCurrentTime(&self->session->segmentStartTime);
+        self->session->isTimingStarted = true;
+        self->session->accumulatedTimeMs = 0;
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STARTED});
     }
 }
 
@@ -129,6 +164,7 @@ void engineStop(Engine *self) {
         self->lastError = ENGINE_ERROR_NONE;
         self->stopCause = ENGINE_STOP_CAUSE_USER; // Assuming user stopped the engine
         updateTime(self->session);
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
     }
 }
 
@@ -141,6 +177,7 @@ void enginePause(Engine *self) {
         self->state = ENGINE_PAUSED;
         self->lastError = ENGINE_ERROR_NONE;
         updateTime(self->session);
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_PAUSED});
     }
 }
 
@@ -152,7 +189,9 @@ void engineResume(Engine *self) {
         }
         self->state = ENGINE_RUNNING;
         self->lastError = ENGINE_ERROR_NONE;
-        self->session->segmentStartTime = clock();
+        getCurrentTime(&self->session->segmentStartTime);
+        self->session->isTimingStarted = true;
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_RESUMED});
     }
 }
 
@@ -164,10 +203,10 @@ void engineReset(Engine *self) {
         self->session->text[0] = '\0'; // Clear the text
         self->session->length = 0;
         self->session->currentIndex = 0;
-        self->session->segmentStartTime = 0;
-        self->session->segmentEndTime = 0;
-        self->session->accumulatedTime = 0;
+        self->session->isTimingStarted = false;
+        self->session->accumulatedTimeMs = 0;
         clearArray(self->session->incorrectKeystrokesIndices, 4096); // Clear incorrect keystrokes indices
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_NONE});
     }
 }
 
@@ -176,6 +215,8 @@ void engineKeyPress_Strict(Engine *self, char key) {
     if (self->session->currentIndex >= self->session->length) {
         self->state = ENGINE_IDLE; // Stop the engine if the session is complete
         self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
         return;
     }
     char expectedChar = self->session->text[self->session->currentIndex];
@@ -196,9 +237,12 @@ void engineKeyPress_Flow(Engine *self, char key) {
     if (self->session->currentIndex >= self->session->length) {
         self->state = ENGINE_IDLE; // Stop the engine if the session is complete
         self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
         return;
     }
     char expectedChar = self->session->text[self->session->currentIndex];
+    self->stats.totalKeystrokes++;
     if (key == expectedChar) {
         self->stats.correctKeystrokes++;
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_CORRECT_KEYSTROKE});
@@ -208,7 +252,6 @@ void engineKeyPress_Flow(Engine *self, char key) {
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_INCORRECT_KEYSTROKE});
     }
     self->session->currentIndex++;
-    self->stats.totalKeystrokes++;
 }
 
 void engineKeyPress(Engine *self, char key) {
@@ -227,12 +270,17 @@ void engineBackspacePress_Flow(Engine *self) {
     if (!self || self->state != ENGINE_RUNNING) return;
     if (self->session->currentIndex <= 0) return;
     self->session->currentIndex--;
-    uint16_t *is_correct = &self->session->incorrectKeystrokesIndices[self->session->currentIndex];
-    if (*is_correct == 1) {
+    uint16_t *was_incorrect = &self->session->incorrectKeystrokesIndices[self->session->currentIndex];
+    if (*was_incorrect == 1) {
+        // This keystroke was previously marked as incorrect.
+        // Since it was never counted as correct, we do NOT decrement correctKeystrokes.
+        // We only reset the flag so the position can be retried.
+        *was_incorrect = 0;
+    } else {
+        // This keystroke was correct. Decrement correctKeystrokes since we're undoing it.
         self->stats.correctKeystrokes--;
-        *is_correct = 0; // Reset the incorrect keystroke index
     }
-    self->stats.totalKeystrokes++;
+    // Backspace is navigation, not a typing keystroke — do NOT increment totalKeystrokes.
     engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_BACKSPACE});
 }
 
@@ -246,12 +294,11 @@ void engineBackspacePress(Engine *self) {
 
 // callback.h
 
-bool engineRegisterCallback(Engine *engine, void* event, EngineCallback callback, void *userData) {
+bool engineRegisterCallback(Engine *engine, EngineEvent* event, EngineCallback callback, void *userData) {
     if (!engine || !callback) return false;
     if (engine->callbackCount >= MAX_CALLBACKS) return false;
-    EngineEvent* eventPtr = (EngineEvent*)event;
-    if (eventPtr) {
-        engine->events[engine->callbackCount] = *eventPtr;
+    if (event) {
+        engine->events[engine->callbackCount] = *event;
     } else {
         engine->events[engine->callbackCount] = ENGINE_EVENT_NONE; // Default event if none provided
     }
@@ -261,14 +308,13 @@ bool engineRegisterCallback(Engine *engine, void* event, EngineCallback callback
     return true;
 }
 
-void engineExecuteCallbacks(Engine *engine, void* event) {
+void engineExecuteCallbacks(Engine *engine, EngineEvent* event) {
     if (!engine) return;
-    EngineEvent* eventPtr = (EngineEvent*)event;
-    if (!eventPtr) return; // No event provided
+    if (!event) return; // No event provided
     for (uint8_t i = 0; i < engine->callbackCount; ++i) {
         EngineCallback callback = engine->callbacks[i];
         EngineEvent registeredEvent = engine->events[i];
-        if (registeredEvent == *eventPtr && callback) {
+        if (registeredEvent == *event && callback) {
             callback(engine, engine->callbackData[i]);
         }
     }
@@ -337,8 +383,8 @@ SessionStats engineGetStats(Engine* engine) {
         memset(&stats, 0, sizeof(SessionStats));
         return stats;
     }
-    // Calculate duration in seconds
-    stats.duration = (uint32_t)engine->session->accumulatedTime;
+    // Calculate duration in milliseconds
+    stats.durationMs = engine->session->accumulatedTimeMs;
     // Calculate accuracy
     if (engine->stats.totalKeystrokes > 0) {
         stats.accuracy = (double)engine->stats.correctKeystrokes / engine->stats.totalKeystrokes * 100.0;
@@ -346,7 +392,7 @@ SessionStats engineGetStats(Engine* engine) {
         stats.accuracy = 100.0;
     }
     // Calculate WPM (Words Per Minute)
-    double minutes = (double)stats.duration / 60.0;
+    double minutes = (double)stats.durationMs / 60000.0;
     if (minutes > 0) {
         stats.wpmRaw = (double)engine->session->currentIndex / 5.0 / minutes; // Assuming 5 characters per word
         stats.wpm = stats.wpmRaw * (stats.accuracy / 100.0); // Adjusted WPM based on accuracy

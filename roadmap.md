@@ -36,87 +36,22 @@ The table below shows which features from the C++ version exist in the C port, w
 
 ---
 
-## Bugs
+## Fixed Bugs
 
-### 1. Incorrect backspace logic in `engineBackspacePress_Flow` (engine.c:230-233)
+The following 10 bugs were identified and fixed in the initial bug-fix pass:
 
-**Location:** `src/core/engine.c`, lines 230-233
-
-**Problem:** The `incorrectKeystrokesIndices` array is set to `1` at the current position when a keystroke is **incorrect**. The backspace logic checks `if (*is_correct == 1)` to decide whether to decrement `correctKeystrokes`. This logic is **inverted** — when `*is_correct == 1`, the original keypress was incorrect, so `correctKeystrokes` should NOT be decremented (it was never incremented for that press). Decrementing it here will corrupt the accuracy calculation.
-
-**Fix:** Change the condition to check if the backspaced character was correct, or better, track per-character correctness properly. Additionally, the `totalKeystrokes` increment on backspace (line 235) should be removed — backspace is navigation, not a typographical keystroke.
-
-### 2. `engineBackspacePress_Flow` increments `totalKeystrokes` for backspace actions (engine.c:235)
-
-**Location:** `src/core/engine.c`, line 235
-
-**Problem:** Backspace is an editing action, not a typing keystroke. Incrementing `totalKeystrokes` here inflates the keystroke count and reduces accuracy incorrectly.
-
-**Fix:** Remove `self->stats.totalKeystrokes++` from `engineBackspacePress_Flow`, or separate navigation actions from typing keystrokes in stats tracking.
-
-### 3. `clock()` is inappropriate for session timing (engine.c:36-41, 116, 155)
-
-**Location:** `src/core/engine.c`, `updateTime()` function and all `clock()` calls
-
-**Problem:** The engine uses `clock()` to measure session duration. `clock()` returns **processor time** (CPU time used by the process), not wall-clock time. During a typing session, when the user pauses to think (and no CPU is consumed), `clock()` will not advance. This means the session timer will under-report actual elapsed time. The C++ version uses `std::chrono::steady_clock` which is wall-clock time.
-
-**Fix:** Use platform-specific wall-clock timing functions (e.g., `clock_gettime()` with `CLOCK_MONOTONIC` on POSIX, `QueryPerformanceCounter()` on Windows) or standard `time()` with sub-second precision.
-
-### 4. Accumulated time truncation causes precision loss (engine.c:39)
-
-**Location:** `src/core/engine.c`, line 39
-
-**Problem:** `clock_t` values are divided by `CLOCKS_PER_SEC` and then added to accumulated time as whole seconds. This truncates sub-second time on every call to `updateTime()`, causing accumulated error. The C++ version stores duration in milliseconds.
-
-**Fix:** Store accumulated time as a floating-point value or in clock ticks, converting to seconds only for display/output.
-
-### 5. Sentinel value `0` for `segmentStartTime` conflicts with valid `clock()` return (engine.c:37)
-
-**Location:** `src/core/engine.c`, lines 37, 117, 167
-
-**Problem:** The code uses `segmentStartTime == 0` to check if timing has started. However, `clock()` can legally return `0` (e.g., the very first call on some systems). This would cause the timer check to incorrectly skip time updates.
-
-**Fix:** Use a dedicated boolean flag (`isTimingStarted`) instead of relying on a sentinel value.
-
-### 6. `engineKeyPress_Strict` doesn't fire finish event on completion (engine.c:176-179)
-
-**Location:** `src/core/engine.c`, lines 176-179
-
-**Problem:** When `currentIndex >= length`, the engine transitions to `ENGINE_IDLE` and sets `stopCause = ENGINE_STOP_CAUSE_FINISHED`, but it does not call `engineExecuteCallbacks` with `ENGINE_EVENT_FINISHED` or `ENGINE_EVENT_STOPPED`. Callbacks registered for session completion events will never fire. The C++ version fires `onSessionComplete` and `onSessionStop` callbacks.
-
-**Fix:** Call `engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED})` before returning when the session is complete.
-
-### 7. `engineRegisterCallback` uses `void*` for event type (callback.h:18, engine.c:249)
-
-**Location:** `src/core/callback.h`, line 18; `src/core/engine.c`, line 249
-
-**Problem:** The event parameter is typed as `void*` rather than `EngineEvent*`, losing compile-time type safety. Callers can accidentally pass pointers of the wrong type, causing undefined behavior. The C++ version uses a type-safe `Signal` class with template `emit<Args...>`.
-
-**Fix:** Change the parameter type to `EngineEvent*` in both the declaration and implementation, and update callers accordingly.
-
-### 8. `engineKeyPress_Strict` doesn't emit `ENGINE_EVENT_STOPPED` when session completes (engine.c:177-179)
-
-**Location:** `src/core/engine.c`, lines 174-192
-
-**Problem:** When the session finishes in strict mode, the engine stops but no callbacks are executed to notify listeners that the session ended via the `ENGINE_EVENT_STOPPED` event.
-
-**Fix:** Call `engineExecuteCallbacks` with `ENGINE_EVENT_STOPPED` alongside the finish event.
-
-### 9. Hardcoded text in `engineStart` overflows with longer content (engine.c:113)
-
-**Location:** `src/core/engine.c`, line 113
-
-**Problem:** The placeholder text fits, but `strcpy` is used without bounds checking. When real session text is assigned later, this could overflow the 4096-byte buffer.
-
-**Fix:** Replace `strcpy` with `strncpy` (or `snprintf`) and ensure the text buffer size is enforced at all assignment points.
-
-### 10. `engineKeyPress_Flow` advances index even on incorrect keystrokes (engine.c:210)
-
-**Location:** `src/core/engine.c`, line 210
-
-**Problem:** In Flow mode, `currentIndex` is incremented unconditionally after both correct and incorrect keystrokes. However, `totalKeystrokes` is also incremented unconditionally (line 211). This means `totalKeystrokes` will always equal `currentIndex` in Flow mode, making accuracy calculation trivial but also meaning the backspace logic (which decrements `currentIndex`) will cause `totalKeystrokes` to diverge from `currentIndex`. The C++ version handles this more cleanly by tracking keystrokes independently of cursor position.
-
-**Fix:** Ensure `totalKeystrokes` and `currentIndex` are tracked independently and consistently across both modes.
+| # | Bug | Fix |
+|---|-----|-----|
+| 1 | Backspace logic inversion — `correctKeystrokes` decremented for incorrect chars | Changed condition: only decrement `correctKeystrokes` when the backspaced character was correct; reset flag for incorrect ones |
+| 2 | `totalKeystrokes` incremented on backspace | Removed `self->stats.totalKeystrokes++` from `engineBackspacePress_Flow` |
+| 3 | `clock()` used instead of wall-clock time | Replaced with `QueryPerformanceCounter` (Windows) / `clock_gettime(CLOCK_MONOTONIC)` (POSIX) |
+| 4 | Accumulated time truncated to whole seconds | Changed to `int64_t accumulatedTimeMs` — stores milliseconds with no truncation |
+| 5 | Sentinel value `0` conflicted with valid `clock()` return | Added `bool isTimingStarted` flag instead of checking `segmentStartTime == 0` |
+| 6 | `ENGINE_EVENT_FINISHED` never fired on completion | Added `engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED})` in both strict and flow modes |
+| 7 | `void*` event parameter in callbacks (type-unsafe) | Changed to `EngineEvent*` in `callback.h` and `engine.c`; moved `EngineCallback` typedef to `event.h` to resolve circular dependency |
+| 8 | `ENGINE_EVENT_STOPPED` never fired on completion | Added `engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED})` alongside finish event |
+| 9 | `strcpy` without bounds checking | Replaced with `snprintf(self->session->text, sizeof(self->session->text), ...)` |
+| 10 | `totalKeystrokes` and `currentIndex` coupled in Flow mode | Moved `totalKeystrokes++` to before the correct/incorrect branch so it's always incremented once per keypress, independent of `currentIndex++` |
 
 ---
 
@@ -328,19 +263,25 @@ Add comprehensive Doxygen-style documentation matching the C++ version:
 
 ## Implementation Priority
 
-### Phase 1 — Core Fixes (blockers)
-- Fix backspace logic bug (Bug #1)
-- Fix totalKeystrokes inflation on backspace (Bug #2)
+### ✅ Phase 1 — Core Bug Fixes (completed)
+The following bugs have been fixed in the initial bug-fix pass:
+- Backspace logic inversion (Bug #1) — fixed
+- `totalKeystrokes` inflation on backspace (Bug #2) — fixed
+- `clock()` replaced with wall-clock timing (Bug #3) — fixed
+- Accumulated time truncation (Bug #4) — fixed
+- Sentinel value conflict (Bug #5) — fixed
+- Missing finish event (Bug #6) — fixed
+- Type-unsafe `void*` in callbacks (Bug #7) — fixed
+- Missing stopped event (Bug #8) — fixed
+- `strcpy` overflow risk (Bug #9) — fixed
+- Flow mode keystroke tracking (Bug #10) — fixed
+- `ENGINE_EVENT_STARTED` callback (Improvement #4) — fixed
+- Header dependency cleanup (Improvement #8) — fixed
+- Duration changed to milliseconds (Improvement #12) — fixed
+
+### Phase 2 — Build & Test Infrastructure
 - Build system activation (Improvement #1)
 - Add test suite (Improvement #2)
-
-### Phase 2 — Correctness & State Machine
-- Replace `clock()` with wall-clock timing (Bug #3)
-- Fix accumulated time truncation (Bug #4)
-- Fix sentinel value conflict (Bug #5)
-- Emit missing callbacks (Bugs #6, #8, Improvement #4)
-- Add missing states (Improvement #11)
-- Change duration to milliseconds (Improvement #12)
 
 ### Phase 3 — Feature Parity with C++ Version
 - Implement timeout handling (Improvement #6)
@@ -352,13 +293,12 @@ Add comprehensive Doxygen-style documentation matching the C++ version:
 - Implement auto-save (Suggestion #8)
 
 ### Phase 4 — Polish & Quality
-- Type safety for callback event parameter (Bug #7)
-- `strcpy` → safe alternatives (Bug #9)
 - Error hierarchy expansion (Suggestion #6)
 - Test access macros (Suggestion #9)
 - Incorrect keystrokes counter (Improvement #7)
-- Header dependency cleanup (Improvement #8)
 - NULL-check consistency (Improvement #9)
 - Memory optimization (Suggestion #11)
 - API documentation (Suggestion #12)
 - Continuous integration (Suggestion #10)
+- Engine struct visibility (Improvement #5)
+- State machine states (Improvement #11)
