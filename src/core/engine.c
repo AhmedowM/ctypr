@@ -111,6 +111,22 @@ static bool tryCompleteSession(Engine* self) {
     return false;
 }
 
+/// @brief Check if the session has exceeded its timeout.
+///        If so, transition to idle with TIMEOUT stop cause and fire callbacks.
+/// @return true if timeout occurred, false otherwise
+static bool checkTimeout(Engine* self) {
+    if (!self || self->timeout == 0) return false;
+    updateTime(self->session);
+    if (self->session->accumulatedTimeMs >= (int64_t)self->timeout * 1000) {
+        self->state = ENGINE_IDLE;
+        self->stopCause = ENGINE_STOP_CAUSE_TIMEOUT;
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_TIMEOUT});
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
+        return true;
+    }
+    return false;
+}
+
 Engine* engineCreate(EngineMode mode, uint16_t timeout) {
     Engine* engine = malloc(sizeof(Engine));
     if (!engine) return NULL; // Handle memory allocation failure
@@ -244,6 +260,7 @@ void engineReset(Engine *self) {
 
 void engineKeyPress_Strict(Engine *self, char key) {
     if (!self || self->state != ENGINE_RUNNING) return;
+    if (checkTimeout(self)) return;
     if (tryCompleteSession(self)) return;
 
     char expectedChar = self->session->text[self->session->currentIndex];
@@ -262,6 +279,7 @@ void engineKeyPress_Strict(Engine *self, char key) {
 
 void engineKeyPress_Flow(Engine *self, char key) {
     if (!self || self->state != ENGINE_RUNNING) return;
+    if (checkTimeout(self)) return;
     if (tryCompleteSession(self)) return;
 
     char expectedChar = self->session->text[self->session->currentIndex];
@@ -409,6 +427,8 @@ SessionStats engineGetStats(Engine* engine) {
     if (!engine || !engine->session) {
         return stats;
     }
+    // Check timeout on every stats poll (UI updates trigger this)
+    checkTimeout(engine);
     // Copy raw counters
     stats.totalKeystrokes = engine->stats.totalKeystrokes;
     stats.correctKeystrokes = engine->stats.correctKeystrokes;

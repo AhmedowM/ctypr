@@ -10,6 +10,10 @@
 #include <string.h>
 #include <assert.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 /* Simple test framework */
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -704,6 +708,56 @@ static void test_flow_backspace_retry(void) {
     PASS();
 }
 
+/* ===== Test: Timeout handling ===== */
+static void test_timeout_triggers(void) {
+    TEST("Timeout: triggers after configured duration");
+    Engine* e = engineCreate(StrictMode, 1); // 1 second timeout
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    CallbackFlags flags;
+    reset_flags(&flags);
+    
+    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_TIMEOUT}, on_finish, &flags);
+    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STOPPED}, on_stop, &flags);
+    
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+    
+    // Poll the engine (simulating UI updates) until timeout triggers
+    for (int i = 0; i < 20; i++) {
+        Sleep(100);
+        engineGetStats(e); // This triggers checkTimeout()
+        if (engineIsTimedOut(e)) break;
+    }
+    
+    ASSERT(engineIsTimedOut(e), "should be timed out");
+    ASSERT(flags.finished, "TIMEOUT callback should have fired");
+    ASSERT(flags.stopped, "STOPPED callback should have fired");
+    
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_timeout_zero_disabled(void) {
+    TEST("Timeout: zero timeout means no timeout");
+    Engine* e = engineCreate(StrictMode, 0); // No timeout
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+    
+    // Type a few keys — should not timeout
+    engineKeyPress(e, 'T');
+    engineKeyPress(e, 'h');
+    engineKeyPress(e, 'e');
+    
+    ASSERT(engineIsRunning(e), "should still be running (no timeout)");
+    
+    engineStop(e);
+    engineDestroy(e);
+    PASS();
+}
+
 /* ===== Test: Empty stats before start ===== */
 static void test_stats_before_start(void) {
     TEST("Stats: get stats before starting");
@@ -785,6 +839,10 @@ int main(void) {
     
     // Safety
     test_null_safety();
+
+    // Timeout
+    test_timeout_triggers();
+    test_timeout_zero_disabled();
     
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
            tests_passed, tests_failed, test_count);
