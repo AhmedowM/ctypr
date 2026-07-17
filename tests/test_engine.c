@@ -482,6 +482,53 @@ static void test_error_not_running(void) {
     PASS();
 }
 
+static void test_error_to_string_all(void) {
+    TEST("Error: all error codes convert to strings");
+    char buf[64];
+    
+    engineErrorToString(ENGINE_ERROR_NONE, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "No Error") == 0, "NONE string");
+    
+    engineErrorToString(ENGINE_ERROR_INVALID_MODE, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Invalid Mode") == 0, "INVALID_MODE string");
+    
+    engineErrorToString(ENGINE_ERROR_INVALID_TIMEOUT, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Invalid Timeout") == 0, "INVALID_TIMEOUT string");
+    
+    engineErrorToString(ENGINE_ERROR_UNKNOWN, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Unknown Error") == 0, "UNKNOWN string");
+    
+    PASS();
+}
+
+static void test_pause_error_path(void) {
+    TEST("Error handling: pause when not running");
+    Engine* e = engineCreate(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    ASSERT(engineIsIdle(e), "should be idle");
+    enginePause(e);
+    ASSERT(engineIsIdle(e), "should still be idle after pause on non-running engine");
+    
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_resume_error_path(void) {
+    TEST("Error handling: resume when not paused");
+    Engine* e = engineCreate(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+    engineResume(e);
+    ASSERT(engineIsRunning(e), "should still be running after resume on non-paused engine");
+    
+    engineStop(e);
+    engineDestroy(e);
+    PASS();
+}
+
 static void test_null_safety(void) {
     TEST("NULL safety: all functions handle NULL gracefully");
     
@@ -578,6 +625,27 @@ static void test_event_to_string(void) {
     engineEventToString(ENGINE_EVENT_INCORRECT_KEYSTROKE, buf, sizeof(buf));
     ASSERT(strcmp(buf, "Incorrect Keystroke") == 0, "INCORRECT_KEYSTROKE string");
     
+    engineEventToString(ENGINE_EVENT_STOPPED, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Stopped") == 0, "STOPPED string");
+    
+    engineEventToString(ENGINE_EVENT_PAUSED, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Paused") == 0, "PAUSED string");
+    
+    engineEventToString(ENGINE_EVENT_RESUMED, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Resumed") == 0, "RESUMED string");
+    
+    engineEventToString(ENGINE_EVENT_TIMEOUT, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Timeout") == 0, "TIMEOUT string");
+    
+    engineEventToString(ENGINE_EVENT_BACKSPACE, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Backspace Pressed") == 0, "BACKSPACE string");
+    
+    engineEventToString(ENGINE_EVENT_SEGMENT_COMPLETED, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Segment Completed") == 0, "SEGMENT_COMPLETED string");
+    
+    engineEventToString(ENGINE_EVENT_ERROR, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Error Occurred") == 0, "ERROR string");
+    
     PASS();
 }
 
@@ -666,6 +734,70 @@ static void test_multi_event_slots(void) {
     
     ASSERT(engineOnPaused(e, on_pause, &flags) >= 0, "PAUSED should still accept");
     ASSERT(engineOnStopped(e, on_stop, &flags) >= 0, "STOPPED should still accept");
+    
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_signal_disconnect(void) {
+    TEST("Signal: disconnect removes callback");
+    Engine* e = engineCreate(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    CallbackFlags flags;
+    reset_flags(&flags);
+    
+    int slotId = engineOnStarted(e, on_start, &flags);
+    ASSERT(slotId >= 0, "registration should succeed");
+    
+    engineDisconnect(e, ENGINE_EVENT_STARTED, slotId);
+    engineStart(e);
+    ASSERT(!flags.started, "callback should NOT fire after disconnect");
+    ASSERT(flags.call_count == 0, "call_count should be 0");
+    
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_signal_clear(void) {
+    TEST("Signal: clear removes all callbacks for an event");
+    Engine* e = engineCreate(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    CallbackFlags flags1, flags2;
+    reset_flags(&flags1);
+    reset_flags(&flags2);
+    
+    engineOnStarted(e, on_start, &flags1);
+    engineOnStarted(e, on_start, &flags2);
+    
+    engineClearEvent(e, ENGINE_EVENT_STARTED);
+    engineStart(e);
+    ASSERT(!flags1.started, "first callback should NOT fire after clear");
+    ASSERT(!flags2.started, "second callback should NOT fire after clear");
+    
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_signal_clear_isolation(void) {
+    TEST("Signal: clearing one event does not affect others");
+    Engine* e = engineCreate(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    CallbackFlags flags;
+    reset_flags(&flags);
+    
+    engineOnStarted(e, on_start, &flags);
+    engineOnStopped(e, on_stop, &flags);
+    
+    engineClearEvent(e, ENGINE_EVENT_STARTED);
+    engineStart(e);
+    ASSERT(!flags.started, "STARTED callback should NOT fire after clear");
+    ASSERT(flags.call_count == 0, "call_count should be 0 after start");
+    
+    engineStop(e);
+    ASSERT(flags.stopped, "STOPPED callback should still fire");
     
     engineDestroy(e);
     PASS();
@@ -872,6 +1004,9 @@ int main(void) {
     test_multiple_callbacks();
     test_max_callbacks();
     test_multi_event_slots();
+    test_signal_disconnect();
+    test_signal_clear();
+    test_signal_clear_isolation();
     
     test_stats_accuracy();
     test_stats_wpm();
@@ -880,6 +1015,9 @@ int main(void) {
     
     test_error_already_running();
     test_error_not_running();
+    test_error_to_string_all();
+    test_pause_error_path();
+    test_resume_error_path();
     
     test_event_to_string();
     test_state_info();

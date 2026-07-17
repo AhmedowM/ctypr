@@ -311,6 +311,22 @@ static void test_stdout_enabled_with_file(void) {
     PASS();
 }
 
+static void test_logger_add_file_failure(void) {
+    TEST("Logger: addFile returns false on invalid path");
+    Logger* logger = loggerCreate(LOG_LEVEL_DEBUG, false);
+    ASSERT(logger != NULL, "loggerCreate returned NULL");
+
+#ifdef _WIN32
+    bool ok = loggerAddFile(logger, "\\\\invalid_path\\test.log");
+#else
+    bool ok = loggerAddFile(logger, "/nonexistent_dir_xyz/test.log");
+#endif
+    ASSERT(!ok, "addFile should fail for invalid path");
+
+    loggerDestroy(logger);
+    PASS();
+}
+
 static void test_null_safety(void) {
     TEST("Logger: NULL safety");
     loggerDestroy(NULL);
@@ -338,6 +354,7 @@ int main(void) {
     test_output_format_all_levels();
     test_log_level_none_suppresses_all();
     test_stdout_enabled_with_file();
+    test_logger_add_file_failure();
     test_null_safety();
 
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",

@@ -119,6 +119,19 @@ static void test_formatter_null_safety(void) {
     PASS();
 }
 
+static void test_formatter_null_text(void) {
+    TEST("Formatter: NULL text returns empty chunk");
+    Formatter* f = formatterCreate();
+    ASSERT(f != NULL, "formatter should not be NULL");
+
+    ContentChunk chunk = formatterFormat(f, NULL, 100);
+    ASSERT(chunk.length == 0, "length should be 0");
+    ASSERT(chunk.text[0] == '\0', "text should be empty");
+
+    formatterDestroy(f);
+    PASS();
+}
+
 static void test_formatter_zero_max_chunk(void) {
     TEST("Formatter: zero maxChunkSize returns empty");
     Formatter* f = formatterCreate();
@@ -141,6 +154,7 @@ int main(void) {
     test_formatter_space_fallback();
     test_formatter_reset();
     test_formatter_null_safety();
+    test_formatter_null_text();
     test_formatter_zero_max_chunk();
     
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
