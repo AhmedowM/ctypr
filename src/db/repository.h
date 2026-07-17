@@ -21,7 +21,7 @@ typedef struct Repository Repository;
 Repository* repositoryCreate(const char* dbPath);
 void repositoryDestroy(Repository* repo);
 
-bool repositorySaveSession(Repository* repo, const SessionData* data);
+int64_t repositorySaveSession(Repository* repo, const SessionData* data);
 SessionData repositoryGetSession(Repository* repo, int64_t id);
 SessionData* repositoryGetAll(Repository* repo, size_t* count);
 SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count);

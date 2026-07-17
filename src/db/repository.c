@@ -108,12 +108,12 @@ static int rowToSessionData(sqlite3_stmt* stmt, SessionData* data) {
     return 0;
 }
 
-bool repositorySaveSession(Repository* repo, const SessionData* data) {
-    if (!repo || !data) return false;
-    if (ensureInitialized(repo) != 0) return false;
+int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
+    if (!repo || !data) return -1;
+    if (ensureInitialized(repo) != 0) return -1;
     
     char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return false;
+    if (!fullPath) return -1;
     
     sqlite3* db = NULL;
     int rc = sqlite3_open(fullPath, &db);
@@ -121,7 +121,7 @@ bool repositorySaveSession(Repository* repo, const SessionData* data) {
     
     if (rc != SQLITE_OK || db == NULL) {
         if (db) sqlite3_close(db);
-        return false;
+        return -1;
     }
     
     const char* sql = "INSERT INTO sessions (timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
@@ -130,7 +130,7 @@ bool repositorySaveSession(Repository* repo, const SessionData* data) {
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
-        return false;
+        return -1;
     }
     
     sqlite3_bind_text(stmt, 1, data->timestamp, -1, SQLITE_STATIC);
@@ -143,10 +143,16 @@ bool repositorySaveSession(Repository* repo, const SessionData* data) {
     sqlite3_bind_double(stmt, 8, data->accuracy);
     
     rc = sqlite3_step(stmt);
+    if (rc == SQLITE_DONE) {
+        int64_t id = sqlite3_last_insert_rowid(db);
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return id;
+    }
+    
     sqlite3_finalize(stmt);
     sqlite3_close(db);
-    
-    return rc == SQLITE_DONE;
+    return -1;
 }
 
 SessionData repositoryGetSession(Repository* repo, int64_t id) {
