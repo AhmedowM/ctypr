@@ -1,6 +1,32 @@
 cmake_minimum_required(VERSION 3.25)
 project(ctypr LANGUAGES C)
 
+# SQLite3 - Database (using same approach as C++ version)
+include(FetchContent)
+FetchContent_Declare(
+    sqlite3
+    URL https://sqlite.org/2026/sqlite-amalgamation-3530300.zip
+)
+# FetchContent_MakeAvailable(sqlite3)
+
+FetchContent_GetProperties(sqlite3)
+if(NOT sqlite3_POPULATED)
+    FetchContent_Populate(sqlite3)
+    
+    # Create the static library target using the downloaded C file
+    add_library(sqlite3 STATIC "${sqlite3_SOURCE_DIR}/sqlite3.c")
+    
+    # Make sure targets linking to this can find "sqlite3.h"
+    target_include_directories(sqlite3 PUBLIC
+        $<BUILD_INTERFACE:${sqlite3_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:include>
+    )
+    
+    # Link thread support (required by SQLite)
+    find_package(Threads REQUIRED)
+    target_link_libraries(sqlite3 PRIVATE Threads::Threads)
+endif()
+
 # Get version from git tags (e.g., v0.4.0 -> 0.4.0)
 execute_process(
     COMMAND git describe --tags --abbrev=0
@@ -28,6 +54,7 @@ file(GLOB_RECURSE CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/content/*.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/format/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/db/*.c
 )
 
 # Configure version.h from template into build tree
@@ -56,9 +83,13 @@ target_include_directories(ctypr PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/core>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/content>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/format>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/db>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+
+# Link SQLite
+target_link_libraries(ctypr PRIVATE sqlite3)
 
 # ---- Compile Options ----
 
@@ -88,8 +119,8 @@ endif()
 # Set install directories
 set(CMAKE_INSTALL_INCLUDEDIR "include/ctypr")
 
-# Install the library
-install(TARGETS ctypr
+# Install the library (include sqlite3 in export set, matching C++ approach)
+install(TARGETS ctypr sqlite3
     EXPORT ctyprTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
