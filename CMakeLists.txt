@@ -23,9 +23,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ---- Library ----
 
-# Collect all core source files
+# Collect all source files
 file(GLOB_RECURSE CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/content/*.c
 )
 
 # Configure version.h from template into build tree
@@ -52,6 +53,7 @@ add_library(ctypr STATIC ${CORE_SOURCES})
 # Set include directories — build tree has generated version.h + copied headers
 target_include_directories(ctypr PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/core>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/content>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
