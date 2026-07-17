@@ -49,6 +49,14 @@ endif()
 
 if(BUILD_TESTING OR NOT DEFINED BUILD_TESTING)
     enable_testing()
+    
+    # Add a custom target for running tests with output
+    add_custom_target(run-tests
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+        DEPENDS test_ctypr
+        COMMENT "Running all tests with verbose output"
+    )
+    
     add_subdirectory(tests)
 endif()
 

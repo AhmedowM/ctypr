@@ -279,6 +279,7 @@ void engineKeyPress_Flow(Engine *self, char key) {
 }
 
 void engineKeyPress(Engine *self, char key) {
+    if (!self) return;
     if (self->mode == StrictMode) {
         engineKeyPress_Strict(self, key);
     } else if (self->mode == FlowMode) {
@@ -309,6 +310,7 @@ void engineBackspacePress_Flow(Engine *self) {
 }
 
 void engineBackspacePress(Engine *self) {
+    if (!self) return;
     if (self->mode == StrictMode) {
         engineBackspacePress_Strict(self);
     } else if (self->mode == FlowMode) {
