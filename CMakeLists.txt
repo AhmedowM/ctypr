@@ -12,7 +12,7 @@ execute_process(
 if(GIT_TAG MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
     set(PROJECT_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
 else()
-    set(PROJECT_VERSION "0.4.0")  # Fallback if no tag
+    set(PROJECT_VERSION "0.1.0")  # Fallback if no tag
 endif()
 
 set(CMAKE_C_STANDARD 17)
@@ -28,12 +28,31 @@ file(GLOB_RECURSE CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.c
 )
 
+# Configure version.h from template into build tree
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
+)
+
+# Copy public headers to build tree so generated version.h sits alongside them
+file(GLOB CORE_HEADERS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.h
+)
+foreach(header ${CORE_HEADERS})
+    configure_file(
+        ${header}
+        ${CMAKE_CURRENT_BINARY_DIR}/include/core/${CMAKE_FILE_NAME}
+        COPYONLY
+    )
+endforeach()
+
 # Create the static library
 add_library(ctypr STATIC ${CORE_SOURCES})
 
-# Set include directories
+# Set include directories — build tree has generated version.h + copied headers
 target_include_directories(ctypr PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/core>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
