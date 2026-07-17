@@ -55,6 +55,7 @@ file(GLOB_RECURSE CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/content/*.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/format/*.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/db/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/*.c
 )
 
 # Configure version.h from template into build tree
@@ -84,6 +85,7 @@ target_include_directories(ctypr PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/content>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/format>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/db>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/utils>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )

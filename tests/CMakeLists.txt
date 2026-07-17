@@ -37,3 +37,13 @@ add_test(NAME repository COMMAND test_repository)
 set_tests_properties(repository PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# Logger tests
+add_executable(test_logger
+    test_logger.c
+)
+target_link_libraries(test_logger PRIVATE ctypr)
+add_test(NAME logger COMMAND test_logger)
+set_tests_properties(logger PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
