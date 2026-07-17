@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <stddef.h>
+
 typedef struct ContentProvider ContentProvider;
 typedef struct Logger Logger;
 
@@ -12,6 +14,13 @@ typedef struct ContentChunk {
     char text[4096]; ///< The chunk text content.
     size_t length;   ///< Length of the text in bytes (excluding null terminator).
 } ContentChunk;
+
+/// @brief Query mode for the database-backed content provider.
+typedef enum ContentDbMode {
+    CONTENT_DB_COMMON_WORDS, ///< Select words ordered by frequency rank
+    CONTENT_DB_RANDOM_WORDS, ///< Select words in random order
+    CONTENT_DB_SENTENCES     ///< Select sentences
+} ContentDbMode;
 
 // ── Factory Functions ────────────────────────────────────────────────────────
 
@@ -26,9 +35,9 @@ ContentProvider* contentProviderFromString(const char* text);
 ContentProvider* contentProviderFromFile(const char* filepath);
 
 /// @brief Create a ContentProvider backed by a database query.
-/// @param filepath Path to the SQLite database file (copied internally).
+///        Default mode is CONTENT_DB_COMMON_WORDS with limit 300.
+/// @param filepath Path to the SQLite content database file (copied internally).
 /// @return A new ContentProvider, or NULL on allocation failure.
-/// @note Currently returns empty content; database provider is not yet implemented.
 ContentProvider* contentProviderFromDatabase(const char* filepath);
 
 /// @brief Create a ContentProvider that fetches content from a URL.
@@ -47,6 +56,18 @@ void contentProviderDestroy(ContentProvider* provider);
 /// @param self   The ContentProvider instance.
 /// @param logger The Logger instance to attach (NULL to detach).
 void contentProviderSetLogger(ContentProvider* self, Logger* logger);
+
+// ── Database Provider Configuration ──────────────────────────────────────────
+
+/// @brief Set the query mode for a database-backed content provider.
+/// @param self The ContentProvider instance.
+/// @param mode The ContentDbMode to use.
+void contentProviderSetDbMode(ContentProvider* self, ContentDbMode mode);
+
+/// @brief Set the maximum number of rows to fetch from the database.
+/// @param self  The ContentProvider instance.
+/// @param limit Maximum rows per query (default 300).
+void contentProviderSetContentLimit(ContentProvider* self, size_t limit);
 
 // ── Content Access ───────────────────────────────────────────────────────────
 
