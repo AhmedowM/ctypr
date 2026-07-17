@@ -106,6 +106,12 @@ static void on_backspace(Engine* e, void* data) {
     ((CallbackFlags*)data)->call_count++;
 }
 
+static void on_timeout(Engine* e, void* data) {
+    (void)e;
+    ((CallbackFlags*)data)->timeout = true;
+    ((CallbackFlags*)data)->call_count++;
+}
+
 /* ===== Test: Engine Creation and Destruction ===== */
 static void test_create_destroy(void) {
     TEST("Engine creation and destruction");
@@ -717,22 +723,29 @@ static void test_timeout_triggers(void) {
     CallbackFlags flags;
     reset_flags(&flags);
     
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_TIMEOUT}, on_finish, &flags);
+    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_TIMEOUT}, on_timeout, &flags);
     engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STOPPED}, on_stop, &flags);
     
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Poll the engine (simulating UI updates) until timeout triggers
-    for (int i = 0; i < 20; i++) {
-        Sleep(100);
-        engineGetStats(e); // This triggers checkTimeout()
-        if (engineIsTimedOut(e)) break;
-    }
+    // Wait for timeout to expire — timeout is only checked on key press
+#ifdef _WIN32
+    Sleep(1100);
+#else
+    struct timespec ts = {1, 100000000L};
+    nanosleep(&ts, NULL);
+#endif
+    
+    engineKeyPress(e, 'T');  // This should trigger checkTimeout, not process the key
     
     ASSERT(engineIsTimedOut(e), "should be timed out");
-    ASSERT(flags.finished, "TIMEOUT callback should have fired");
+    ASSERT(flags.timeout, "TIMEOUT callback should have fired");
     ASSERT(flags.stopped, "STOPPED callback should have fired");
+    
+    // Verify the key press was NOT processed (session stopped before processing)
+    SessionStats stats = engineGetStats(e);
+    ASSERT(stats.totalKeystrokes == 0, "key should not have been processed after timeout");
     
     engineDestroy(e);
     PASS();
@@ -754,6 +767,79 @@ static void test_timeout_zero_disabled(void) {
     ASSERT(engineIsRunning(e), "should still be running (no timeout)");
     
     engineStop(e);
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_timeout_pause_does_not_accumulate(void) {
+    TEST("Timeout: paused time does not count toward timeout");
+    Engine* e = engineCreate(StrictMode, 1); // 1 second timeout
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+    
+    // Type one key and pause
+    engineKeyPress(e, 'T');
+    enginePause(e);
+    ASSERT(engineIsPaused(e), "should be paused");
+    
+    // Wait longer than the timeout period while paused
+#ifdef _WIN32
+    Sleep(1500);
+#else
+    struct timespec ts = {1, 500000000L};
+    nanosleep(&ts, NULL);
+#endif
+    
+    // Resume — time should not have been counting
+    engineResume(e);
+    ASSERT(engineIsRunning(e), "should still be running (paused time not counted)");
+    
+    // Type another key immediately — should not timeout
+    engineKeyPress(e, 'h');
+    ASSERT(engineIsRunning(e), "should still be running after resume + key");
+    
+    engineStop(e);
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_timeout_backspace_checks_timeout(void) {
+    TEST("Timeout: backspace also triggers timeout check");
+    Engine* e = engineCreate(FlowMode, 1); // 1 second timeout
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    CallbackFlags flags;
+    reset_flags(&flags);
+    
+    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_TIMEOUT}, on_timeout, &flags);
+    
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+    
+    // Type a few keys so backspace has something to undo
+    engineKeyPress(e, 'T');
+    engineKeyPress(e, 'h');
+    
+    // Wait for timeout
+#ifdef _WIN32
+    Sleep(1100);
+#else
+    struct timespec ts = {1, 100000000L};
+    nanosleep(&ts, NULL);
+#endif
+    
+    // Backspace should trigger timeout, not undo the char
+    engineBackspacePress(e);
+    
+    ASSERT(engineIsTimedOut(e), "should be timed out after backspace");
+    ASSERT(flags.timeout, "TIMEOUT callback should have fired");
+    
+    // Verify currentIndex was NOT decremented (backspace was not processed)
+    SessionStats stats = engineGetStats(e);
+    ASSERT(stats.totalKeystrokes == 2, "keystrokes should still be 2 (backspace not processed)");
+    
     engineDestroy(e);
     PASS();
 }
@@ -843,6 +929,8 @@ int main(void) {
     // Timeout
     test_timeout_triggers();
     test_timeout_zero_disabled();
+    test_timeout_pause_does_not_accumulate();
+    test_timeout_backspace_checks_timeout();
     
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
            tests_passed, tests_failed, test_count);

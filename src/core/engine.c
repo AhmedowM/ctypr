@@ -72,6 +72,7 @@ void updateTime(Session* session) {
     getCurrentTime(&session->segmentEndTime);
     session->accumulatedTimeMs += timeDiffMs(&session->segmentEndTime, &session->segmentStartTime);
     if (session->accumulatedTimeMs < 0) { session->accumulatedTimeMs = 0; }
+    session->segmentStartTime = session->segmentEndTime;
 }
 
 // engine.h
@@ -114,7 +115,9 @@ static bool tryCompleteSession(Engine* self) {
 
 static bool checkTimeout(Engine* self) {
     if (!self || self->timeout == 0) return false;
-    updateTime(self->session);
+    if (self->state == ENGINE_RUNNING) {
+        updateTime(self->session);
+    }
     if (self->session->accumulatedTimeMs >= (int64_t)self->timeout * 1000) {
         self->state = ENGINE_IDLE;
         self->stopCause = ENGINE_STOP_CAUSE_TIMEOUT;
@@ -215,6 +218,7 @@ void engineStop(Engine *self) {
         self->lastError = ENGINE_ERROR_NONE;
         self->stopCause = ENGINE_STOP_CAUSE_USER;
         updateTime(self->session);
+        self->session->isTimingStarted = false;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session stopped by user");
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
     }
@@ -331,6 +335,7 @@ void engineBackspacePress_Strict(Engine *self) {
 
 void engineBackspacePress_Flow(Engine *self) {
     if (!self || self->state != ENGINE_RUNNING) return;
+    if (checkTimeout(self)) return;
     if (self->session->currentIndex <= 0) return;
     self->session->currentIndex--;
     uint16_t *was_incorrect = &self->session->incorrectKeystrokesIndices[self->session->currentIndex];
@@ -444,8 +449,10 @@ SessionStats engineGetStats(Engine* engine) {
     if (!engine || !engine->session) {
         return stats;
     }
-    // Check timeout on every stats poll (UI updates trigger this)
-    checkTimeout(engine);
+    // Update elapsed time for display
+    if (engine->state == ENGINE_RUNNING && engine->session->isTimingStarted) {
+        updateTime(engine->session);
+    }
     // Copy raw counters
     stats.totalKeystrokes = engine->stats.totalKeystrokes;
     stats.correctKeystrokes = engine->stats.correctKeystrokes;
