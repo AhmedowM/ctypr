@@ -152,7 +152,7 @@ static void test_state_transitions(void) {
     ASSERT(!engineIsIdle(e), "should not be idle after start");
     
     engineStop(e);
-    ASSERT(engineIsIdle(e), "should be idle after stop");
+    ASSERT(!engineIsIdle(e), "should not be idle (has stop cause)");
     ASSERT(engineIsStopped(e), "should be stopped (user stop)");
     engineDestroy(e);
     PASS();
@@ -174,7 +174,7 @@ static void test_pause_resume(void) {
     ASSERT(engineIsRunning(e), "should be running after resume");
     
     engineStop(e);
-    ASSERT(engineIsIdle(e), "should be idle after stop");
+    ASSERT(engineIsStopped(e), "should be stopped");
     engineDestroy(e);
     PASS();
 }
@@ -383,7 +383,7 @@ static void test_session_complete_strict(void) {
         engineKeyPress(e, *p);
     }
     
-    ASSERT(engineIsIdle(e), "should be idle after completion");
+    ASSERT(!engineIsIdle(e), "should not be idle (has finish cause)");
     ASSERT(engineIsCompleted(e), "should be completed");
     ASSERT(flags.finished, "FINISHED callback should have fired");
     ASSERT(flags.stopped, "STOPPED callback should have fired");
@@ -412,7 +412,7 @@ static void test_session_complete_flow(void) {
         engineKeyPress(e, *p);
     }
     
-    ASSERT(engineIsIdle(e), "should be idle after completion");
+    ASSERT(!engineIsIdle(e), "should not be idle (has finish cause)");
     ASSERT(engineIsCompleted(e), "should be completed");
     ASSERT(flags.finished, "FINISHED callback should have fired");
     ASSERT(flags.stopped, "STOPPED callback should have fired");

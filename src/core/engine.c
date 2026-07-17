@@ -92,6 +92,25 @@ typedef struct Engine {
     SessionStats stats;
 } Engine;
 
+/// @brief Mark the session as complete and fire finish/stop callbacks.
+///        Extracted to avoid duplicating this logic across both modes.
+static void completeSession(Engine* self) {
+    self->state = ENGINE_IDLE;
+    self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
+    engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
+    engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
+}
+
+/// @brief Check if the session has reached the end of the text.
+///        If so, complete it and return true.
+static bool tryCompleteSession(Engine* self) {
+    if (self->session->currentIndex >= self->session->length) {
+        completeSession(self);
+        return true;
+    }
+    return false;
+}
+
 Engine* engineCreate(EngineMode mode, uint16_t timeout) {
     Engine* engine = malloc(sizeof(Engine));
     if (!engine) return NULL; // Handle memory allocation failure
@@ -145,12 +164,15 @@ void engineStart(Engine *self) {
         }
         self->state = ENGINE_RUNNING;
         self->lastError = ENGINE_ERROR_NONE;
+        self->stopCause = ENGINE_STOP_CAUSE_NONE;
+        memset(&self->stats, 0, sizeof(SessionStats));
         snprintf(self->session->text, sizeof(self->session->text), "%s", "The quick brown fox jumps over the lazy dog."); // Placeholder text
         self->session->length = strlen(self->session->text);
         self->session->currentIndex = 0;
         getCurrentTime(&self->session->segmentStartTime);
         self->session->isTimingStarted = true;
         self->session->accumulatedTimeMs = 0;
+        clearArray(self->session->incorrectKeystrokesIndices, 4096);
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STARTED});
     }
 }
@@ -196,10 +218,10 @@ void engineResume(Engine *self) {
     }
 }
 
-bool engineIsRunning(Engine* self) { return self && self->state == ENGINE_RUNNING; }
-bool engineIsPaused(Engine* self)  { return self && self->state == ENGINE_PAUSED; }
-bool engineIsIdle(Engine* self)    { return self && self->state == ENGINE_IDLE; }
-bool engineIsError(Engine* self)   { return self && self->state == ENGINE_ERROR; }
+bool engineIsRunning(Engine* self)   { return self && self->state == ENGINE_RUNNING; }
+bool engineIsPaused(Engine* self)    { return self && self->state == ENGINE_PAUSED; }
+bool engineIsIdle(Engine* self)      { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_NONE; }
+bool engineIsError(Engine* self)     { return self && self->state == ENGINE_ERROR; }
 bool engineIsCompleted(Engine* self) { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_FINISHED; }
 bool engineIsTimedOut(Engine* self)  { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_TIMEOUT; }
 bool engineIsStopped(Engine* self)   { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_USER; }
@@ -209,6 +231,7 @@ void engineReset(Engine *self) {
         self->state = ENGINE_IDLE;
         self->lastError = ENGINE_ERROR_NONE;
         self->stopCause = ENGINE_STOP_CAUSE_NONE;
+        memset(&self->stats, 0, sizeof(SessionStats));
         self->session->text[0] = '\0'; // Clear the text
         self->session->length = 0;
         self->session->currentIndex = 0;
@@ -221,26 +244,15 @@ void engineReset(Engine *self) {
 
 void engineKeyPress_Strict(Engine *self, char key) {
     if (!self || self->state != ENGINE_RUNNING) return;
-    if (self->session->currentIndex >= self->session->length) {
-        self->state = ENGINE_IDLE; // Stop the engine if the session is complete
-        self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
-        return;
-    }
+    if (tryCompleteSession(self)) return;
+
     char expectedChar = self->session->text[self->session->currentIndex];
     self->stats.totalKeystrokes++;
     if (key == expectedChar) {
         self->session->currentIndex++;
         self->stats.correctKeystrokes++;
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_CORRECT_KEYSTROKE});
-        // Check if the session is now complete after advancing
-        if (self->session->currentIndex >= self->session->length) {
-            self->state = ENGINE_IDLE;
-            self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
-            engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
-            engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
-        }
+        tryCompleteSession(self);
     } else {
         // Record the index of the incorrect keystroke
         self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
@@ -250,13 +262,8 @@ void engineKeyPress_Strict(Engine *self, char key) {
 
 void engineKeyPress_Flow(Engine *self, char key) {
     if (!self || self->state != ENGINE_RUNNING) return;
-    if (self->session->currentIndex >= self->session->length) {
-        self->state = ENGINE_IDLE; // Stop the engine if the session is complete
-        self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
-        return;
-    }
+    if (tryCompleteSession(self)) return;
+
     char expectedChar = self->session->text[self->session->currentIndex];
     self->stats.totalKeystrokes++;
     if (key == expectedChar) {
@@ -268,13 +275,7 @@ void engineKeyPress_Flow(Engine *self, char key) {
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_INCORRECT_KEYSTROKE});
     }
     self->session->currentIndex++;
-    // Check if the session is now complete after advancing
-    if (self->session->currentIndex >= self->session->length) {
-        self->state = ENGINE_IDLE;
-        self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
-    }
+    tryCompleteSession(self);
 }
 
 void engineKeyPress(Engine *self, char key) {
