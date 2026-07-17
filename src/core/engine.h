@@ -2,6 +2,7 @@
 #define ENGINE_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct Engine Engine;
 typedef enum EngineMode { StrictMode, FlowMode, UnknownMode } EngineMode;
@@ -66,6 +67,43 @@ void engineResume(Engine* self);
 /// @brief Reset the engine
 /// @param self The Engine instance
 void engineReset(Engine* self);
+
+// State Queries
+
+/// @brief Check if the engine is currently running
+/// @param self The Engine instance
+/// @return true if the engine state is RUNNING
+bool engineIsRunning(Engine* self);
+
+/// @brief Check if the engine is paused
+/// @param self The Engine instance
+/// @return true if the engine state is PAUSED
+bool engineIsPaused(Engine* self);
+
+/// @brief Check if the engine is idle
+/// @param self The Engine instance
+/// @return true if the engine state is IDLE
+bool engineIsIdle(Engine* self);
+
+/// @brief Check if the engine encountered an error
+/// @param self The Engine instance
+/// @return true if the engine state is ERROR
+bool engineIsError(Engine* self);
+
+/// @brief Check if the session completed successfully
+/// @param self The Engine instance
+/// @return true if the engine is in IDLE state and stop cause is FINISHED
+bool engineIsCompleted(Engine* self);
+
+/// @brief Check if the session timed out
+/// @param self The Engine instance
+/// @return true if the engine is in IDLE state and stop cause is TIMEOUT
+bool engineIsTimedOut(Engine* self);
+
+/// @brief Check if the session was stopped by the user
+/// @param self The Engine instance
+/// @return true if the engine is in IDLE state and stop cause is USER
+bool engineIsStopped(Engine* self);
 
 // Process
 

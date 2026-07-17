@@ -106,6 +106,7 @@ Engine* engineCreate(EngineMode mode, uint16_t timeout) {
         free(engine);
         return NULL; // Handle memory allocation failure
     }
+    memset(&engine->stats, 0, sizeof(SessionStats));
     engine->session->isTimingStarted = false;
     clearArray(engine->session->incorrectKeystrokesIndices, 4096);
     return engine;
@@ -195,6 +196,14 @@ void engineResume(Engine *self) {
     }
 }
 
+bool engineIsRunning(Engine* self) { return self && self->state == ENGINE_RUNNING; }
+bool engineIsPaused(Engine* self)  { return self && self->state == ENGINE_PAUSED; }
+bool engineIsIdle(Engine* self)    { return self && self->state == ENGINE_IDLE; }
+bool engineIsError(Engine* self)   { return self && self->state == ENGINE_ERROR; }
+bool engineIsCompleted(Engine* self) { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_FINISHED; }
+bool engineIsTimedOut(Engine* self)  { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_TIMEOUT; }
+bool engineIsStopped(Engine* self)   { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_USER; }
+
 void engineReset(Engine *self) {
     if (self) {
         self->state = ENGINE_IDLE;
@@ -225,6 +234,13 @@ void engineKeyPress_Strict(Engine *self, char key) {
         self->session->currentIndex++;
         self->stats.correctKeystrokes++;
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_CORRECT_KEYSTROKE});
+        // Check if the session is now complete after advancing
+        if (self->session->currentIndex >= self->session->length) {
+            self->state = ENGINE_IDLE;
+            self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
+            engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
+            engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
+        }
     } else {
         // Record the index of the incorrect keystroke
         self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
@@ -252,6 +268,13 @@ void engineKeyPress_Flow(Engine *self, char key) {
         engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_INCORRECT_KEYSTROKE});
     }
     self->session->currentIndex++;
+    // Check if the session is now complete after advancing
+    if (self->session->currentIndex >= self->session->length) {
+        self->state = ENGINE_IDLE;
+        self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
+        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
+    }
 }
 
 void engineKeyPress(Engine *self, char key) {
@@ -263,7 +286,7 @@ void engineKeyPress(Engine *self, char key) {
 }
 
 void engineBackspacePress_Strict(Engine *self) {
-    return; // Backspace is disabled in Strict Mode
+    (void)self; // Backspace is disabled in Strict Mode
 }
 
 void engineBackspacePress_Flow(Engine *self) {
@@ -379,10 +402,13 @@ EngineStateInfo engineGetStateInfo(Engine* engine) {
 
 SessionStats engineGetStats(Engine* engine) {
     SessionStats stats;
+    memset(&stats, 0, sizeof(SessionStats));
     if (!engine || !engine->session) {
-        memset(&stats, 0, sizeof(SessionStats));
         return stats;
     }
+    // Copy raw counters
+    stats.totalKeystrokes = engine->stats.totalKeystrokes;
+    stats.correctKeystrokes = engine->stats.correctKeystrokes;
     // Calculate duration in milliseconds
     stats.durationMs = engine->session->accumulatedTimeMs;
     // Calculate accuracy
