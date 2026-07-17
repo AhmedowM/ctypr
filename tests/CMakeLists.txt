@@ -17,3 +17,13 @@ add_test(NAME content COMMAND test_content)
 set_tests_properties(content PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# Formatter tests
+add_executable(test_formatter
+    test_formatter.c
+)
+target_link_libraries(test_formatter PRIVATE ctypr)
+add_test(NAME formatter COMMAND test_formatter)
+set_tests_properties(formatter PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
