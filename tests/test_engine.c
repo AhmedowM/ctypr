@@ -14,7 +14,6 @@
 #include <windows.h>
 #endif
 
-/* Simple test framework */
 static int tests_passed = 0;
 static int tests_failed = 0;
 static int test_count = 0;
@@ -39,7 +38,6 @@ static int test_count = 0;
     if (!(cond)) { FAIL(msg); return; } \
 } while(0)
 
-/* Callback tracking */
 typedef struct {
     bool started;
     bool stopped;
@@ -112,7 +110,6 @@ static void on_timeout(Engine* e, void* data) {
     ((CallbackFlags*)data)->call_count++;
 }
 
-/* ===== Test: Engine Creation and Destruction ===== */
 static void test_create_destroy(void) {
     TEST("Engine creation and destruction");
     Engine* e = engineCreate(StrictMode, 0);
@@ -124,7 +121,6 @@ static void test_create_destroy(void) {
     PASS();
 }
 
-/* ===== Test: Mode get/set ===== */
 static void test_mode(void) {
     TEST("Mode get/set");
     Engine* e = engineCreate(StrictMode, 0);
@@ -138,7 +134,6 @@ static void test_mode(void) {
     PASS();
 }
 
-/* ===== Test: Timeout get/set ===== */
 static void test_timeout(void) {
     TEST("Timeout get/set");
     Engine* e = engineCreate(StrictMode, 30);
@@ -150,7 +145,6 @@ static void test_timeout(void) {
     PASS();
 }
 
-/* ===== Test: State transitions ===== */
 static void test_state_transitions(void) {
     TEST("State transitions: start -> stop");
     Engine* e = engineCreate(StrictMode, 0);
@@ -205,7 +199,6 @@ static void test_reset(void) {
     PASS();
 }
 
-/* ===== Test: Strict mode key processing ===== */
 static void test_strict_correct_key(void) {
     TEST("Strict mode: correct key advances");
     Engine* e = engineCreate(StrictMode, 0);
@@ -214,8 +207,6 @@ static void test_strict_correct_key(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // "The quick brown fox jumps over the lazy dog."
-    // First char is 'T'
     engineKeyPress(e, 'T');
     
     SessionStats stats = engineGetStats(e);
@@ -235,7 +226,6 @@ static void test_strict_incorrect_key(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // First char is 'T', press 'X' (wrong)
     engineKeyPress(e, 'X');
     
     SessionStats stats = engineGetStats(e);
@@ -243,7 +233,6 @@ static void test_strict_incorrect_key(void) {
     ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should be 0");
     ASSERT(stats.accuracy == 0.0, "accuracy should be 0%%");
     
-    // Now press correct key 'T'
     engineKeyPress(e, 'T');
     stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should be 2");
@@ -262,7 +251,7 @@ static void test_strict_backspace_disabled(void) {
     ASSERT(engineIsRunning(e), "should be running");
     
     engineKeyPress(e, 'T');
-    engineBackspacePress(e); // Should do nothing in strict mode
+    engineBackspacePress(e);
     
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should still be 1");
@@ -272,7 +261,6 @@ static void test_strict_backspace_disabled(void) {
     PASS();
 }
 
-/* ===== Test: Flow mode key processing ===== */
 static void test_flow_correct_key(void) {
     TEST("Flow mode: correct key advances");
     Engine* e = engineCreate(FlowMode, 0);
@@ -299,14 +287,12 @@ static void test_flow_incorrect_key_advances(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // First char is 'T', press 'X' (wrong) - should still advance
     engineKeyPress(e, 'X');
     
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should be 1");
     ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should be 0");
     
-    // Now the expected char is 'h' (second char)
     engineKeyPress(e, 'h');
     stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should be 2");
@@ -316,7 +302,6 @@ static void test_flow_incorrect_key_advances(void) {
     PASS();
 }
 
-/* ===== Test: Backspace in flow mode ===== */
 static void test_flow_backspace_correct(void) {
     TEST("Flow mode: backspace over correct key");
     Engine* e = engineCreate(FlowMode, 0);
@@ -325,17 +310,17 @@ static void test_flow_backspace_correct(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    engineKeyPress(e, 'T'); // correct
-    engineKeyPress(e, 'h'); // correct
+    engineKeyPress(e, 'T');
+    engineKeyPress(e, 'h');
     
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should be 2");
     ASSERT(stats.correctKeystrokes == 2, "correctKeystrokes should be 2");
     
-    engineBackspacePress(e); // undo 'h'
+    engineBackspacePress(e);
     
     stats = engineGetStats(e);
-    ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should still be 2 (backspace is not a keystroke)");
+    ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should still be 2");
     ASSERT(stats.correctKeystrokes == 1, "correctKeystrokes should be 1 after undoing correct char");
     
     engineDestroy(e);
@@ -350,19 +335,18 @@ static void test_flow_backspace_incorrect(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    engineKeyPress(e, 'X'); // incorrect (expected 'T')
+    engineKeyPress(e, 'X');
     
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should be 1");
     ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should be 0");
     
-    engineBackspacePress(e); // undo the incorrect 'X'
+    engineBackspacePress(e);
     
     stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should still be 1");
-    ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should still be 0 (was never correct)");
+    ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should still be 0");
     
-    // Now type correct key
     engineKeyPress(e, 'T');
     stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should be 2");
@@ -372,7 +356,6 @@ static void test_flow_backspace_incorrect(void) {
     PASS();
 }
 
-/* ===== Test: Session completion ===== */
 static void test_session_complete_strict(void) {
     TEST("Strict mode: session completion fires events");
     Engine* e = engineCreate(StrictMode, 0);
@@ -381,13 +364,12 @@ static void test_session_complete_strict(void) {
     CallbackFlags flags;
     reset_flags(&flags);
     
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_FINISHED}, on_finish, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STOPPED}, on_stop, &flags);
+    engineOnFinished(e, on_finish, &flags);
+    engineOnStopped(e, on_stop, &flags);
     
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Type the full text: "The quick brown fox jumps over the lazy dog."
     const char* text = "The quick brown fox jumps over the lazy dog.";
     for (const char* p = text; *p; p++) {
         engineKeyPress(e, *p);
@@ -410,13 +392,12 @@ static void test_session_complete_flow(void) {
     CallbackFlags flags;
     reset_flags(&flags);
     
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_FINISHED}, on_finish, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STOPPED}, on_stop, &flags);
+    engineOnFinished(e, on_finish, &flags);
+    engineOnStopped(e, on_stop, &flags);
     
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Type the full text
     const char* text = "The quick brown fox jumps over the lazy dog.";
     for (const char* p = text; *p; p++) {
         engineKeyPress(e, *p);
@@ -431,7 +412,6 @@ static void test_session_complete_flow(void) {
     PASS();
 }
 
-/* ===== Test: Callback system ===== */
 static void test_callbacks(void) {
     TEST("Callback system: all lifecycle events fire");
     Engine* e = engineCreate(StrictMode, 0);
@@ -440,22 +420,22 @@ static void test_callbacks(void) {
     CallbackFlags flags;
     reset_flags(&flags);
     
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STARTED}, on_start, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STOPPED}, on_stop, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_PAUSED}, on_pause, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_RESUMED}, on_resume, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_CORRECT_KEYSTROKE}, on_correct, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_INCORRECT_KEYSTROKE}, on_incorrect, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_BACKSPACE}, on_backspace, &flags);
+    engineOnStarted(e, on_start, &flags);
+    engineOnStopped(e, on_stop, &flags);
+    engineOnPaused(e, on_pause, &flags);
+    engineOnResumed(e, on_resume, &flags);
+    engineOnCorrectKeystroke(e, on_correct, &flags);
+    engineOnIncorrectKeystroke(e, on_incorrect, &flags);
+    engineOnBackspace(e, on_backspace, &flags);
     
     engineStart(e);
     ASSERT(flags.started, "STARTED callback should fire");
     ASSERT(flags.call_count == 1, "call_count should be 1 after start");
     
-    engineKeyPress(e, 'T'); // correct
+    engineKeyPress(e, 'T');
     ASSERT(flags.correct, "CORRECT_KEYSTROKE callback should fire");
     
-    engineKeyPress(e, 'X'); // incorrect
+    engineKeyPress(e, 'X');
     ASSERT(flags.incorrect, "INCORRECT_KEYSTROKE callback should fire");
     
     enginePause(e);
@@ -471,14 +451,13 @@ static void test_callbacks(void) {
     PASS();
 }
 
-/* ===== Test: Error handling ===== */
 static void test_error_already_running(void) {
     TEST("Error handling: start when already running");
     Engine* e = engineCreate(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
-    engineStart(e); // Should set error but not crash
+    engineStart(e);
     
     char buf[64];
     engineErrorToString(ENGINE_ERROR_ALREADY_RUNNING, buf, sizeof(buf));
@@ -493,7 +472,7 @@ static void test_error_not_running(void) {
     Engine* e = engineCreate(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
-    engineStop(e); // Should not crash, should set error
+    engineStop(e);
     
     char buf[64];
     engineErrorToString(ENGINE_ERROR_NOT_RUNNING, buf, sizeof(buf));
@@ -503,11 +482,9 @@ static void test_error_not_running(void) {
     PASS();
 }
 
-/* ===== Test: NULL safety ===== */
 static void test_null_safety(void) {
     TEST("NULL safety: all functions handle NULL gracefully");
     
-    // These should not crash
     engineDestroy(NULL);
     engineSetMode(NULL, StrictMode);
     engineGetMode(NULL);
@@ -520,8 +497,6 @@ static void test_null_safety(void) {
     engineReset(NULL);
     engineKeyPress(NULL, 'a');
     engineBackspacePress(NULL);
-    engineRegisterCallback(NULL, NULL, NULL, NULL);
-    engineExecuteCallbacks(NULL, NULL);
     engineGetStateInfo(NULL);
     engineGetStats(NULL);
     engineIsRunning(NULL);
@@ -531,11 +506,17 @@ static void test_null_safety(void) {
     engineIsCompleted(NULL);
     engineIsTimedOut(NULL);
     engineIsStopped(NULL);
+    engineOnStarted(NULL, NULL, NULL);
+    engineOnStopped(NULL, NULL, NULL);
+    engineOnTimeout(NULL, NULL, NULL);
+    engineOnFinished(NULL, NULL, NULL);
+    engineOnBackspace(NULL, NULL, NULL);
+    engineDisconnect(NULL, ENGINE_EVENT_STARTED, 0);
+    engineClearEvent(NULL, ENGINE_EVENT_STARTED);
     
     PASS();
 }
 
-/* ===== Test: Stats calculation ===== */
 static void test_stats_accuracy(void) {
     TEST("Stats: accuracy calculation");
     Engine* e = engineCreate(StrictMode, 0);
@@ -543,14 +524,10 @@ static void test_stats_accuracy(void) {
     
     engineStart(e);
     
-    // "The quick brown fox jumps over the lazy dog."
-    // Press: T(✓), X(✗), h(✓), e(✓) = 3 correct out of 4 = 75% accuracy
-    // Note: after X (incorrect at index 1, expected 'h'), index stays at 1
-    //        so pressing 'X' again at an incorrect position, then 'h' correct
-    engineKeyPress(e, 'T'); // correct (index 0)
-    engineKeyPress(e, 'X'); // incorrect (expected 'h' at index 1)
-    engineKeyPress(e, 'h'); // correct (index 1) — retry the position after incorrect
-    engineKeyPress(e, 'e'); // correct (index 2)
+    engineKeyPress(e, 'T');
+    engineKeyPress(e, 'X');
+    engineKeyPress(e, 'h');
+    engineKeyPress(e, 'e');
     
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 4, "totalKeystrokes should be 4");
@@ -568,7 +545,6 @@ static void test_stats_wpm(void) {
     
     engineStart(e);
     
-    // Type "The " (4 chars = 0.8 words at 5 chars/word)
     engineKeyPress(e, 'T');
     engineKeyPress(e, 'h');
     engineKeyPress(e, 'e');
@@ -583,7 +559,6 @@ static void test_stats_wpm(void) {
     PASS();
 }
 
-/* ===== Test: Event to string ===== */
 static void test_event_to_string(void) {
     TEST("Event to string conversion");
     char buf[64];
@@ -606,7 +581,6 @@ static void test_event_to_string(void) {
     PASS();
 }
 
-/* ===== Test: State info ===== */
 static void test_state_info(void) {
     TEST("State info: engineGetStateInfo");
     Engine* e = engineCreate(StrictMode, 0);
@@ -625,7 +599,6 @@ static void test_state_info(void) {
     ASSERT(info.state == ENGINE_IDLE, "state should be IDLE");
     ASSERT(info.stopCause == ENGINE_STOP_CAUSE_USER, "stopCause should be USER");
     
-    // Test NULL engine
     info = engineGetStateInfo(NULL);
     ASSERT(info.state == ENGINE_ERROR, "NULL engine should return ERROR state");
     ASSERT(info.stopCause == ENGINE_STOP_CAUSE_ERROR, "NULL engine should return ERROR stopCause");
@@ -634,7 +607,6 @@ static void test_state_info(void) {
     PASS();
 }
 
-/* ===== Test: Multiple callbacks for same event ===== */
 static void test_multiple_callbacks(void) {
     TEST("Multiple callbacks for same event");
     Engine* e = engineCreate(StrictMode, 0);
@@ -644,10 +616,10 @@ static void test_multiple_callbacks(void) {
     reset_flags(&flags1);
     reset_flags(&flags2);
     
-    bool reg1 = engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STARTED}, on_start, &flags1);
-    bool reg2 = engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STARTED}, on_start, &flags2);
-    ASSERT(reg1, "first registration should succeed");
-    ASSERT(reg2, "second registration should succeed");
+    int reg1 = engineOnStarted(e, on_start, &flags1);
+    int reg2 = engineOnStarted(e, on_start, &flags2);
+    ASSERT(reg1 >= 0, "first registration should succeed");
+    ASSERT(reg2 >= 0, "second registration should succeed");
     
     engineStart(e);
     ASSERT(flags1.started, "first callback should fire");
@@ -659,30 +631,46 @@ static void test_multiple_callbacks(void) {
     PASS();
 }
 
-/* ===== Test: Max callbacks limit ===== */
 static void test_max_callbacks(void) {
-    TEST("Max callbacks limit");
+    TEST("Max callbacks limit per event");
     Engine* e = engineCreate(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
     reset_flags(&flags);
     
-    // Register MAX_CALLBACKS (10) callbacks
-    for (int i = 0; i < 10; i++) {
-        bool reg = engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STARTED}, on_start, &flags);
-        ASSERT(reg, "registration should succeed");
+    for (int i = 0; i < 5; i++) {
+        int reg = engineOnStarted(e, on_start, &flags);
+        ASSERT(reg >= 0, "registration should succeed");
     }
     
-    // 11th should fail
-    bool reg = engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STARTED}, on_start, &flags);
-    ASSERT(!reg, "11th registration should fail");
+    int reg = engineOnStarted(e, on_start, &flags);
+    ASSERT(reg < 0, "6th registration should fail");
     
     engineDestroy(e);
     PASS();
 }
 
-/* ===== Test: Flow mode backspace then retype ===== */
+static void test_multi_event_slots(void) {
+    TEST("Different event types have independent slot limits");
+    Engine* e = engineCreate(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    CallbackFlags flags;
+    reset_flags(&flags);
+    
+    for (int i = 0; i < 5; i++) {
+        ASSERT(engineOnStarted(e, on_start, &flags) >= 0, "fill STARTED slots");
+    }
+    ASSERT(engineOnStarted(e, on_start, &flags) < 0, "STARTED full");
+    
+    ASSERT(engineOnPaused(e, on_pause, &flags) >= 0, "PAUSED should still accept");
+    ASSERT(engineOnStopped(e, on_stop, &flags) >= 0, "STOPPED should still accept");
+    
+    engineDestroy(e);
+    PASS();
+}
+
 static void test_flow_backspace_retry(void) {
     TEST("Flow mode: backspace incorrect, retype correct");
     Engine* e = engineCreate(FlowMode, 0);
@@ -691,19 +679,16 @@ static void test_flow_backspace_retry(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Type 'X' (incorrect, expected 'T')
     engineKeyPress(e, 'X');
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should be 1");
     ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should be 0");
     
-    // Backspace to undo
     engineBackspacePress(e);
     stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should still be 1");
     ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should still be 0");
     
-    // Now type correct key
     engineKeyPress(e, 'T');
     stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should be 2");
@@ -714,22 +699,20 @@ static void test_flow_backspace_retry(void) {
     PASS();
 }
 
-/* ===== Test: Timeout handling ===== */
 static void test_timeout_triggers(void) {
     TEST("Timeout: triggers after configured duration");
-    Engine* e = engineCreate(StrictMode, 1); // 1 second timeout
+    Engine* e = engineCreate(StrictMode, 1);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
     reset_flags(&flags);
     
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_TIMEOUT}, on_timeout, &flags);
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_STOPPED}, on_stop, &flags);
+    engineOnTimeout(e, on_timeout, &flags);
+    engineOnStopped(e, on_stop, &flags);
     
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Wait for timeout to expire — timeout is only checked on key press
 #ifdef _WIN32
     Sleep(1100);
 #else
@@ -737,13 +720,12 @@ static void test_timeout_triggers(void) {
     nanosleep(&ts, NULL);
 #endif
     
-    engineKeyPress(e, 'T');  // This should trigger checkTimeout, not process the key
+    engineKeyPress(e, 'T');
     
     ASSERT(engineIsTimedOut(e), "should be timed out");
     ASSERT(flags.timeout, "TIMEOUT callback should have fired");
     ASSERT(flags.stopped, "STOPPED callback should have fired");
     
-    // Verify the key press was NOT processed (session stopped before processing)
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 0, "key should not have been processed after timeout");
     
@@ -753,13 +735,12 @@ static void test_timeout_triggers(void) {
 
 static void test_timeout_zero_disabled(void) {
     TEST("Timeout: zero timeout means no timeout");
-    Engine* e = engineCreate(StrictMode, 0); // No timeout
+    Engine* e = engineCreate(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Type a few keys — should not timeout
     engineKeyPress(e, 'T');
     engineKeyPress(e, 'h');
     engineKeyPress(e, 'e');
@@ -773,18 +754,16 @@ static void test_timeout_zero_disabled(void) {
 
 static void test_timeout_pause_does_not_accumulate(void) {
     TEST("Timeout: paused time does not count toward timeout");
-    Engine* e = engineCreate(StrictMode, 1); // 1 second timeout
+    Engine* e = engineCreate(StrictMode, 1);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Type one key and pause
     engineKeyPress(e, 'T');
     enginePause(e);
     ASSERT(engineIsPaused(e), "should be paused");
     
-    // Wait longer than the timeout period while paused
 #ifdef _WIN32
     Sleep(1500);
 #else
@@ -792,11 +771,9 @@ static void test_timeout_pause_does_not_accumulate(void) {
     nanosleep(&ts, NULL);
 #endif
     
-    // Resume — time should not have been counting
     engineResume(e);
     ASSERT(engineIsRunning(e), "should still be running (paused time not counted)");
     
-    // Type another key immediately — should not timeout
     engineKeyPress(e, 'h');
     ASSERT(engineIsRunning(e), "should still be running after resume + key");
     
@@ -807,22 +784,20 @@ static void test_timeout_pause_does_not_accumulate(void) {
 
 static void test_timeout_backspace_checks_timeout(void) {
     TEST("Timeout: backspace also triggers timeout check");
-    Engine* e = engineCreate(FlowMode, 1); // 1 second timeout
+    Engine* e = engineCreate(FlowMode, 1);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
     reset_flags(&flags);
     
-    engineRegisterCallback(e, &(EngineEvent){ENGINE_EVENT_TIMEOUT}, on_timeout, &flags);
+    engineOnTimeout(e, on_timeout, &flags);
     
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-    // Type a few keys so backspace has something to undo
     engineKeyPress(e, 'T');
     engineKeyPress(e, 'h');
     
-    // Wait for timeout
 #ifdef _WIN32
     Sleep(1100);
 #else
@@ -830,13 +805,11 @@ static void test_timeout_backspace_checks_timeout(void) {
     nanosleep(&ts, NULL);
 #endif
     
-    // Backspace should trigger timeout, not undo the char
     engineBackspacePress(e);
     
     ASSERT(engineIsTimedOut(e), "should be timed out after backspace");
     ASSERT(flags.timeout, "TIMEOUT callback should have fired");
     
-    // Verify currentIndex was NOT decremented (backspace was not processed)
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 2, "keystrokes should still be 2 (backspace not processed)");
     
@@ -844,7 +817,6 @@ static void test_timeout_backspace_checks_timeout(void) {
     PASS();
 }
 
-/* ===== Test: Empty stats before start ===== */
 static void test_stats_before_start(void) {
     TEST("Stats: get stats before starting");
     Engine* e = engineCreate(StrictMode, 0);
@@ -862,7 +834,6 @@ static void test_stats_before_start(void) {
     PASS();
 }
 
-/* ===== Test: NULL engine stats ===== */
 static void test_stats_null_engine(void) {
     TEST("Stats: get stats with NULL engine");
     SessionStats stats = engineGetStats(NULL);
@@ -872,61 +843,49 @@ static void test_stats_null_engine(void) {
     PASS();
 }
 
-/* ===== Main ===== */
 int main(void) {
     printf("=== ctypr Engine Test Suite ===\n\n");
     
-    // Engine lifecycle
     test_create_destroy();
     test_mode();
     test_timeout();
     
-    // State transitions
     test_state_transitions();
     test_pause_resume();
     test_reset();
     
-    // Strict mode
     test_strict_correct_key();
     test_strict_incorrect_key();
     test_strict_backspace_disabled();
     
-    // Flow mode
     test_flow_correct_key();
     test_flow_incorrect_key_advances();
     
-    // Backspace
     test_flow_backspace_correct();
     test_flow_backspace_incorrect();
     test_flow_backspace_retry();
     
-    // Session completion
     test_session_complete_strict();
     test_session_complete_flow();
     
-    // Callbacks
     test_callbacks();
     test_multiple_callbacks();
     test_max_callbacks();
+    test_multi_event_slots();
     
-    // Stats
     test_stats_accuracy();
     test_stats_wpm();
     test_stats_before_start();
     test_stats_null_engine();
     
-    // Error handling
     test_error_already_running();
     test_error_not_running();
     
-    // Event/state
     test_event_to_string();
     test_state_info();
     
-    // Safety
     test_null_safety();
-
-    // Timeout
+    
     test_timeout_triggers();
     test_timeout_zero_disabled();
     test_timeout_pause_does_not_accumulate();

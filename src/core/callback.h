@@ -2,25 +2,99 @@
 #define CALLBACK_H
 
 #include "event.h"
+#include "signal.h"
 
 #include <stdbool.h>
-
-/// @brief Maximum number of callbacks that can be registered across all event types.
-#define MAX_CALLBACKS 10
+#include <stdint.h>
 
 typedef struct Engine Engine;
 
-/// @brief Register a callback function to be invoked on a specific engine event.
+/// @brief Register a callback for the ENGINE_EVENT_STARTED event.
 /// @param engine   The Engine instance.
-/// @param event    Pointer to the EngineEvent to listen for. If NULL, defaults to ENGINE_EVENT_NONE.
 /// @param callback The callback function to register.
 /// @param userData User-defined data passed to the callback when invoked.
-/// @return true if the callback was registered, false if the callback table is full.
-bool engineRegisterCallback(Engine* engine, EngineEvent* event, EngineCallback callback, void* userData);
+/// @return Slot index (0-based) on success, or -1 if the signal slot list is full.
+int engineOnStarted(Engine* engine, EngineCallback callback, void* userData);
 
-/// @brief Execute all registered callbacks that match the given event.
+/// @brief Register a callback for the ENGINE_EVENT_STOPPED event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnStopped(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_PAUSED event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnPaused(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_RESUMED event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnResumed(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_TIMEOUT event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnTimeout(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_FINISHED event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnFinished(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_CORRECT_KEYSTROKE event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnCorrectKeystroke(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_INCORRECT_KEYSTROKE event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnIncorrectKeystroke(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_BACKSPACE event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnBackspace(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_SEGMENT_COMPLETED event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnSegmentCompleted(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Register a callback for the ENGINE_EVENT_ERROR event.
+/// @param engine   The Engine instance.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
+/// @return Slot index on success, or -1 if the signal slot list is full.
+int engineOnError(Engine* engine, EngineCallback callback, void* userData);
+
+/// @brief Remove a previously registered callback by event type and slot index.
 /// @param engine The Engine instance.
-/// @param event  Pointer to the EngineEvent to trigger callbacks for.
-void engineExecuteCallbacks(Engine* engine, EngineEvent* event);
+/// @param event  The event type the callback was registered on.
+/// @param slotId The slot index returned by the registration function.
+void engineDisconnect(Engine* engine, EngineEvent event, int slotId);
 
-#endif // CALLBACK_H
+/// @brief Remove all registered callbacks for a specific event type.
+/// @param engine The Engine instance.
+/// @param event  The event type to clear.
+void engineClearEvent(Engine* engine, EngineEvent event);
+
+#endif

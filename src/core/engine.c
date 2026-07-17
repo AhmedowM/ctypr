@@ -5,6 +5,7 @@
 #include "state.h"
 #include "stats.h"
 #include "logger.h"
+#include "signal_internal.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -21,18 +22,16 @@ typedef struct timespec ctypr_time_t;
 #endif
 
 typedef struct Session {
-    char text[4096]; // Assuming a maximum length for the text
+    char text[4096];
     size_t length;
     uint32_t currentIndex;
-    uint16_t incorrectKeystrokesIndices[4096]; // Array to track incorrect keystrokes
+    uint16_t incorrectKeystrokesIndices[4096];
 
     ctypr_time_t segmentStartTime;
     ctypr_time_t segmentEndTime;
-    int64_t accumulatedTimeMs; // Accumulated time in milliseconds
-    bool isTimingStarted;      // Flag to indicate if timing has started
+    int64_t accumulatedTimeMs;
+    bool isTimingStarted;
 } Session;
-
-// Cross-platform high-resolution time functions
 
 static void getCurrentTime(ctypr_time_t* t) {
 #ifdef _WIN32
@@ -56,9 +55,7 @@ static int64_t timeDiffMs(ctypr_time_t* end, ctypr_time_t* start) {
 #endif
 }
 
-// Helper functions
-
-void clearArray(uint16_t* array, size_t size) {
+static void clearArray(uint16_t* array, size_t size) {
     if (array) {
         for (size_t i = 0; i < size; ++i) {
             array[i] = 0;
@@ -85,10 +82,9 @@ typedef struct Engine {
     EngineError lastError;
     EngineStopCause stopCause;
 
-    EngineCallback callbacks[MAX_CALLBACKS];
-    void* callbackData[MAX_CALLBACKS];
-    EngineEvent events[MAX_CALLBACKS];
-    uint8_t callbackCount;
+    Signal onStarted, onStopped, onPaused, onResumed;
+    Signal onTimeout, onFinished, onCorrectKeystroke, onIncorrectKeystroke;
+    Signal onBackspace, onSegmentCompleted, onError;
 
     Session* session;
     SessionStats stats;
@@ -99,12 +95,10 @@ static void completeSession(Engine* self) {
     self->state = ENGINE_IDLE;
     self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
     if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session completed");
-    engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_FINISHED});
-    engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
+    signalEmit(&self->onFinished, self);
+    signalEmit(&self->onStopped, self);
 }
 
-/// @brief Check if the session has reached the end of the text.
-///        If so, complete it and return true.
 static bool tryCompleteSession(Engine* self) {
     if (self->session->currentIndex >= self->session->length) {
         completeSession(self);
@@ -122,15 +116,15 @@ static bool checkTimeout(Engine* self) {
         self->state = ENGINE_IDLE;
         self->stopCause = ENGINE_STOP_CAUSE_TIMEOUT;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_WARNING, "Session timed out");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_TIMEOUT});
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
+        signalEmit(&self->onTimeout, self);
+        signalEmit(&self->onStopped, self);
         return true;
     }
     return false;
 }
 
 Engine* engineCreate(EngineMode mode, uint16_t timeout) {
-    Engine* engine = malloc(sizeof(Engine));
+    Engine* engine = calloc(1, sizeof(Engine));
     if (!engine) {
         fprintf(stderr, "[ERROR] Failed to allocate Engine\n");
         return NULL;
@@ -140,7 +134,6 @@ Engine* engineCreate(EngineMode mode, uint16_t timeout) {
     engine->state = ENGINE_IDLE;
     engine->lastError = ENGINE_ERROR_NONE;
     engine->stopCause = ENGINE_STOP_CAUSE_NONE;
-    engine->callbackCount = 0;
     engine->logger = NULL;
     engine->session = malloc(sizeof(Session));
     if (!engine->session) {
@@ -172,7 +165,7 @@ void engineSetMode(Engine *self, EngineMode mode) {
 
 EngineMode engineGetMode(Engine *self) {
     if (self) { return self->mode; }
-    return UnknownMode; // Default return value
+    return UnknownMode;
 }
 
 void engineSetTimeout(Engine *self, uint16_t timeout) {
@@ -181,7 +174,7 @@ void engineSetTimeout(Engine *self, uint16_t timeout) {
 
 uint16_t engineGetTimeout(Engine *self) {
     if (self) { return self->timeout; }
-    return 0; // Default return value
+    return 0;
 }
 
 void engineStart(Engine *self) {
@@ -203,7 +196,7 @@ void engineStart(Engine *self) {
         self->session->accumulatedTimeMs = 0;
         clearArray(self->session->incorrectKeystrokesIndices, 4096);
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session started");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STARTED});
+        signalEmit(&self->onStarted, self);
     }
 }
 
@@ -220,7 +213,7 @@ void engineStop(Engine *self) {
         updateTime(self->session);
         self->session->isTimingStarted = false;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session stopped by user");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_STOPPED});
+        signalEmit(&self->onStopped, self);
     }
 }
 
@@ -235,7 +228,7 @@ void enginePause(Engine *self) {
         self->lastError = ENGINE_ERROR_NONE;
         updateTime(self->session);
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session paused");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_PAUSED});
+        signalEmit(&self->onPaused, self);
     }
 }
 
@@ -251,7 +244,7 @@ void engineResume(Engine *self) {
         getCurrentTime(&self->session->segmentStartTime);
         self->session->isTimingStarted = true;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session resumed");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_RESUMED});
+        signalEmit(&self->onResumed, self);
     }
 }
 
@@ -276,7 +269,6 @@ void engineReset(Engine *self) {
         self->session->accumulatedTimeMs = 0;
         clearArray(self->session->incorrectKeystrokesIndices, 4096);
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session reset");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_NONE});
     }
 }
 
@@ -291,12 +283,12 @@ void engineKeyPress_Strict(Engine *self, char key) {
         self->session->currentIndex++;
         self->stats.correctKeystrokes++;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Strict: correct key");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_CORRECT_KEYSTROKE});
+        signalEmit(&self->onCorrectKeystroke, self);
         tryCompleteSession(self);
     } else {
         self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Strict: incorrect key");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_INCORRECT_KEYSTROKE});
+        signalEmit(&self->onIncorrectKeystroke, self);
     }
 }
 
@@ -310,11 +302,11 @@ void engineKeyPress_Flow(Engine *self, char key) {
     if (key == expectedChar) {
         self->stats.correctKeystrokes++;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: correct key");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_CORRECT_KEYSTROKE});
+        signalEmit(&self->onCorrectKeystroke, self);
     } else {
         self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: incorrect key");
-        engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_INCORRECT_KEYSTROKE});
+        signalEmit(&self->onIncorrectKeystroke, self);
     }
     self->session->currentIndex++;
     tryCompleteSession(self);
@@ -330,7 +322,7 @@ void engineKeyPress(Engine *self, char key) {
 }
 
 void engineBackspacePress_Strict(Engine *self) {
-    (void)self; // Backspace is disabled in Strict Mode
+    (void)self;
 }
 
 void engineBackspacePress_Flow(Engine *self) {
@@ -346,7 +338,7 @@ void engineBackspacePress_Flow(Engine *self) {
         self->stats.correctKeystrokes--;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: backspace over correct key");
     }
-    engineExecuteCallbacks(self, &(EngineEvent){ENGINE_EVENT_BACKSPACE});
+    signalEmit(&self->onBackspace, self);
 }
 
 void engineBackspacePress(Engine *self) {
@@ -358,32 +350,101 @@ void engineBackspacePress(Engine *self) {
     }
 }
 
-// callback.h
+// callback.h — per-event registration
 
-bool engineRegisterCallback(Engine *engine, EngineEvent* event, EngineCallback callback, void *userData) {
-    if (!engine || !callback) return false;
-    if (engine->callbackCount >= MAX_CALLBACKS) return false;
-    if (event) {
-        engine->events[engine->callbackCount] = *event;
-    } else {
-        engine->events[engine->callbackCount] = ENGINE_EVENT_NONE; // Default event if none provided
-    }
-    engine->callbacks[engine->callbackCount] = callback;
-    engine->callbackData[engine->callbackCount] = userData;
-    engine->callbackCount++;
-    return true;
+int engineOnStarted(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onStarted, callback, userData);
 }
 
-void engineExecuteCallbacks(Engine *engine, EngineEvent* event) {
+int engineOnStopped(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onStopped, callback, userData);
+}
+
+int engineOnPaused(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onPaused, callback, userData);
+}
+
+int engineOnResumed(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onResumed, callback, userData);
+}
+
+int engineOnTimeout(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onTimeout, callback, userData);
+}
+
+int engineOnFinished(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onFinished, callback, userData);
+}
+
+int engineOnCorrectKeystroke(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onCorrectKeystroke, callback, userData);
+}
+
+int engineOnIncorrectKeystroke(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onIncorrectKeystroke, callback, userData);
+}
+
+int engineOnBackspace(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onBackspace, callback, userData);
+}
+
+int engineOnSegmentCompleted(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onSegmentCompleted, callback, userData);
+}
+
+int engineOnError(Engine* engine, EngineCallback callback, void* userData) {
+    if (!engine) return -1;
+    return signalConnect(&engine->onError, callback, userData);
+}
+
+void engineDisconnect(Engine* engine, EngineEvent event, int slotId) {
     if (!engine) return;
-    if (!event) return; // No event provided
-    for (uint8_t i = 0; i < engine->callbackCount; ++i) {
-        EngineCallback callback = engine->callbacks[i];
-        EngineEvent registeredEvent = engine->events[i];
-        if (registeredEvent == *event && callback) {
-            callback(engine, engine->callbackData[i]);
-        }
+    Signal* sig = NULL;
+    switch (event) {
+        case ENGINE_EVENT_STARTED:   sig = &engine->onStarted; break;
+        case ENGINE_EVENT_STOPPED:   sig = &engine->onStopped; break;
+        case ENGINE_EVENT_PAUSED:    sig = &engine->onPaused; break;
+        case ENGINE_EVENT_RESUMED:   sig = &engine->onResumed; break;
+        case ENGINE_EVENT_TIMEOUT:   sig = &engine->onTimeout; break;
+        case ENGINE_EVENT_FINISHED:  sig = &engine->onFinished; break;
+        case ENGINE_EVENT_CORRECT_KEYSTROKE:   sig = &engine->onCorrectKeystroke; break;
+        case ENGINE_EVENT_INCORRECT_KEYSTROKE: sig = &engine->onIncorrectKeystroke; break;
+        case ENGINE_EVENT_BACKSPACE: sig = &engine->onBackspace; break;
+        case ENGINE_EVENT_SEGMENT_COMPLETED: sig = &engine->onSegmentCompleted; break;
+        case ENGINE_EVENT_ERROR:     sig = &engine->onError; break;
+        default: return;
     }
+    signalDisconnect(sig, slotId);
+}
+
+void engineClearEvent(Engine* engine, EngineEvent event) {
+    if (!engine) return;
+    Signal* sig = NULL;
+    switch (event) {
+        case ENGINE_EVENT_STARTED:   sig = &engine->onStarted; break;
+        case ENGINE_EVENT_STOPPED:   sig = &engine->onStopped; break;
+        case ENGINE_EVENT_PAUSED:    sig = &engine->onPaused; break;
+        case ENGINE_EVENT_RESUMED:   sig = &engine->onResumed; break;
+        case ENGINE_EVENT_TIMEOUT:   sig = &engine->onTimeout; break;
+        case ENGINE_EVENT_FINISHED:  sig = &engine->onFinished; break;
+        case ENGINE_EVENT_CORRECT_KEYSTROKE:   sig = &engine->onCorrectKeystroke; break;
+        case ENGINE_EVENT_INCORRECT_KEYSTROKE: sig = &engine->onIncorrectKeystroke; break;
+        case ENGINE_EVENT_BACKSPACE: sig = &engine->onBackspace; break;
+        case ENGINE_EVENT_SEGMENT_COMPLETED: sig = &engine->onSegmentCompleted; break;
+        case ENGINE_EVENT_ERROR:     sig = &engine->onError; break;
+        default: return;
+    }
+    signalClear(sig);
 }
 
 // error.h
@@ -422,11 +483,6 @@ void engineEventToString(EngineEvent event, char* buffer, size_t bufferSize) {
     snprintf(buffer, bufferSize, "%s", eventString);
 }
 
-void onEngineEvent(Engine *engine, EngineEvent event, EngineCallback callback, void *userData) {
-    if (!engine || !callback) return;
-    engineRegisterCallback(engine, &event, callback, userData);
-}
-
 // state.h
 
 EngineStateInfo engineGetStateInfo(Engine* engine) {
@@ -449,31 +505,25 @@ SessionStats engineGetStats(Engine* engine) {
     if (!engine || !engine->session) {
         return stats;
     }
-    // Update elapsed time for display
     if (engine->state == ENGINE_RUNNING && engine->session->isTimingStarted) {
         updateTime(engine->session);
     }
-    // Copy raw counters
     stats.totalKeystrokes = engine->stats.totalKeystrokes;
     stats.correctKeystrokes = engine->stats.correctKeystrokes;
-    // Calculate duration in milliseconds
     stats.durationMs = engine->session->accumulatedTimeMs;
-    // Calculate accuracy
     if (engine->stats.totalKeystrokes > 0) {
         stats.accuracy = (double)engine->stats.correctKeystrokes / engine->stats.totalKeystrokes * 100.0;
     } else {
         stats.accuracy = 100.0;
     }
-    // Calculate WPM (Words Per Minute)
     double minutes = (double)stats.durationMs / 60000.0;
     if (minutes > 0) {
-        stats.wpmRaw = (double)engine->session->currentIndex / 5.0 / minutes; // Assuming 5 characters per word
-        stats.wpm = stats.wpmRaw * (stats.accuracy / 100.0); // Adjusted WPM based on accuracy
+        stats.wpmRaw = (double)engine->session->currentIndex / 5.0 / minutes;
+        stats.wpm = stats.wpmRaw * (stats.accuracy / 100.0);
     } else {
         stats.wpmRaw = 0.0;
         stats.wpm = 0.0;
     }
-    // Set timestamp
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
     strftime(stats.timestamp, sizeof(stats.timestamp), "%Y-%m-%d %H:%M:%S", tm_info);

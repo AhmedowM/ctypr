@@ -33,11 +33,4 @@ typedef void (*EngineCallback)(Engine* engine, void* userData);
 /// @param bufferSize Size of the output buffer.
 void engineEventToString(EngineEvent event, char* buffer, size_t bufferSize);
 
-/// @brief Convenience wrapper to register a callback for a single event type.
-/// @param engine   The Engine instance.
-/// @param event    The EngineEvent to listen for.
-/// @param callback The callback function to register.
-/// @param userData User-defined data passed to the callback when invoked.
-void onEngineEvent(Engine* engine, EngineEvent event, EngineCallback callback, void* userData);
-
-#endif // EVENT_H
+#endif
