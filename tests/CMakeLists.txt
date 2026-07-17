@@ -27,3 +27,13 @@ add_test(NAME formatter COMMAND test_formatter)
 set_tests_properties(formatter PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# Repository tests
+add_executable(test_repository
+    test_repository.c
+)
+target_link_libraries(test_repository PRIVATE ctypr)
+add_test(NAME repository COMMAND test_repository)
+set_tests_properties(repository PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
