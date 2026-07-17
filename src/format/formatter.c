@@ -1,4 +1,5 @@
 #include "formatter.h"
+#include "logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,7 @@
 typedef struct Formatter {
     char buffer[4096];
     size_t position;
+    Logger* logger;
 } Formatter;
 
 Formatter* formatterCreate(void) {
@@ -15,11 +17,19 @@ Formatter* formatterCreate(void) {
     if (!f) return NULL;
     f->buffer[0] = '\0';
     f->position = 0;
+    f->logger = NULL;
     return f;
 }
 
 void formatterDestroy(Formatter* formatter) {
-    if (formatter) free(formatter);
+    if (formatter) {
+        if (formatter->logger) loggerLog(formatter->logger, LOG_LEVEL_DEBUG, "Formatter destroyed");
+        free(formatter);
+    }
+}
+
+void formatterSetLogger(Formatter* self, Logger* logger) {
+    if (self) self->logger = logger;
 }
 
 void formatterReset(Formatter* formatter) {
@@ -32,23 +42,24 @@ ContentChunk formatterFormat(Formatter* formatter, const char* text, size_t maxC
     ContentChunk chunk;
     memset(&chunk, 0, sizeof(chunk));
     
-    if (!formatter || !text || maxChunkSize == 0) return chunk;
+    if (!formatter || !text || maxChunkSize == 0) {
+        if (formatter && formatter->logger) loggerLog(formatter->logger, LOG_LEVEL_WARNING, "Formatter: invalid input");
+        return chunk;
+    }
     
     size_t textLen = strlen(text);
     if (textLen == 0) return chunk;
     
-    // If remaining text fits in one chunk, return it all
     if (textLen <= maxChunkSize) {
         snprintf(chunk.text, sizeof(chunk.text), "%s", text);
         chunk.length = textLen;
+        if (formatter->logger) loggerLog(formatter->logger, LOG_LEVEL_DEBUG, "Formatter: text fits in one chunk");
         return chunk;
     }
     
-    // Find a good break point: prefer sentence boundaries (., !, ?)
     size_t breakPoint = maxChunkSize;
     for (size_t i = maxChunkSize / 2; i < maxChunkSize; i++) {
         if (text[i] == '.' || text[i] == '!' || text[i] == '?') {
-            // Include the punctuation and any following whitespace
             breakPoint = i + 1;
             while (breakPoint < textLen && isspace((unsigned char)text[breakPoint])) {
                 breakPoint++;
@@ -57,12 +68,10 @@ ContentChunk formatterFormat(Formatter* formatter, const char* text, size_t maxC
         }
     }
     
-    // If no sentence boundary found, break at last space before maxChunkSize
     if (breakPoint == maxChunkSize) {
         for (size_t i = maxChunkSize - 1; i > maxChunkSize / 2; i--) {
             if (isspace((unsigned char)text[i])) {
                 breakPoint = i;
-                // Skip leading whitespace of next chunk
                 while (breakPoint < textLen && isspace((unsigned char)text[breakPoint])) {
                     breakPoint++;
                 }
@@ -71,9 +80,10 @@ ContentChunk formatterFormat(Formatter* formatter, const char* text, size_t maxC
         }
     }
     
-    // Copy the chunk
     snprintf(chunk.text, sizeof(chunk.text), "%.*s", (int)breakPoint, text);
     chunk.length = breakPoint;
+    
+    if (formatter->logger) loggerLog(formatter->logger, LOG_LEVEL_DEBUG, "Formatter: chunk created");
     
     return chunk;
 }

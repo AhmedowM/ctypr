@@ -1,4 +1,5 @@
 #include "repository.h"
+#include "logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 typedef struct Repository {
     char* dbPath;
     int initialized;
+    Logger* logger;
 } Repository;
 
 static const char* SCHEMA = R"(
@@ -47,12 +49,14 @@ static int ensureInitialized(Repository* repo) {
     
     if (rc != SQLITE_OK || db == NULL) {
         if (db) sqlite3_close(db);
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: failed to open database");
         return -1;
     }
     
     char* errMsg = NULL;
     rc = sqlite3_exec(db, SCHEMA, NULL, NULL, &errMsg);
     if (rc != SQLITE_OK) {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: failed to create schema");
         if (errMsg) sqlite3_free(errMsg);
         sqlite3_close(db);
         return -1;
@@ -60,6 +64,7 @@ static int ensureInitialized(Repository* repo) {
     
     sqlite3_close(db);
     repo->initialized = 1;
+    if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_INFO, "Repository: database initialized");
     return 0;
 }
 
@@ -69,12 +74,18 @@ Repository* repositoryCreate(const char* dbPath) {
     
     repo->dbPath = strdup(dbPath ? dbPath : "typr.db");
     repo->initialized = 0;
+    repo->logger = NULL;
     
     return repo;
 }
 
+void repositorySetLogger(Repository* self, Logger* logger) {
+    if (self) self->logger = logger;
+}
+
 void repositoryDestroy(Repository* repo) {
     if (repo) {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository destroyed");
         free(repo->dbPath);
         free(repo);
     }
@@ -120,6 +131,7 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
     free(fullPath);
     
     if (rc != SQLITE_OK || db == NULL) {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - open failed");
         if (db) sqlite3_close(db);
         return -1;
     }
@@ -129,6 +141,7 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
     sqlite3_stmt* stmt = NULL;
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - prepare failed");
         sqlite3_close(db);
         return -1;
     }
@@ -147,9 +160,11 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
         int64_t id = sqlite3_last_insert_rowid(db);
         sqlite3_finalize(stmt);
         sqlite3_close(db);
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository: session saved");
         return id;
     }
     
+    if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - step failed");
     sqlite3_finalize(stmt);
     sqlite3_close(db);
     return -1;
@@ -170,6 +185,7 @@ SessionData repositoryGetSession(Repository* repo, int64_t id) {
     free(fullPath);
     
     if (rc != SQLITE_OK || db == NULL) {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: getSession - open failed");
         if (db) sqlite3_close(db);
         return data;
     }
@@ -402,6 +418,11 @@ bool repositoryDeleteSession(Repository* repo, int64_t id) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
     
+    if (repo->logger) {
+        if (success) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository: session deleted");
+        else loggerLog(repo->logger, LOG_LEVEL_WARNING, "Repository: deleteSession - session not found");
+    }
+    
     return success;
 }
 
@@ -426,7 +447,10 @@ void repositoryClearAll(Repository* repo) {
     char* errMsg = NULL;
     rc = sqlite3_exec(db, sql, NULL, NULL, &errMsg);
     if (rc != SQLITE_OK) {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: clearAll failed");
         if (errMsg) sqlite3_free(errMsg);
+    } else {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_WARNING, "Repository: all sessions cleared");
     }
     
     sqlite3_close(db);

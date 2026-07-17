@@ -1,4 +1,5 @@
 #include "content.h"
+#include "logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,9 +17,10 @@ typedef struct ContentProvider {
     size_t length;
     size_t currentIndex;
 
-    char* filepath; // For file-based providers
-    char* url;      // For web-based providers
+    char* filepath;
+    char* url;
     ContentProviderType type;
+    Logger* logger;
 } ContentProvider;
 
 ContentProvider* contentProviderFromString(const char* text) {
@@ -30,6 +32,7 @@ ContentProvider* contentProviderFromString(const char* text) {
     cp->type = CONTENT_PROVIDER_STRING;
     cp->filepath = NULL;
     cp->url = NULL;
+    cp->logger = NULL;
     return cp;
 }
 
@@ -43,6 +46,7 @@ ContentProvider* contentProviderFromFile(const char* filepath) {
     cp->currentIndex = 0;
     cp->type = CONTENT_PROVIDER_FILE;
     cp->url = NULL;
+    cp->logger = NULL;
     return cp;
 }
 
@@ -56,6 +60,7 @@ ContentProvider* contentProviderFromDatabase(const char* filepath) {
     cp->currentIndex = 0;
     cp->type = CONTENT_PROVIDER_DATABASE;
     cp->url = NULL;
+    cp->logger = NULL;
     return cp;
 }
 
@@ -69,11 +74,17 @@ ContentProvider* contentProviderFromWeb(const char* url) {
     cp->currentIndex = 0;
     cp->type = CONTENT_PROVIDER_WEB;
     cp->filepath = NULL;
+    cp->logger = NULL;
     return cp;
+}
+
+void contentProviderSetLogger(ContentProvider* self, Logger* logger) {
+    if (self) self->logger = logger;
 }
 
 void contentProviderDestroy(ContentProvider* provider) {
     if (provider) {
+        if (provider->logger) loggerLog(provider->logger, LOG_LEVEL_DEBUG, "ContentProvider destroyed");
         free(provider->filepath);
         free(provider->url);
         free(provider);
@@ -91,12 +102,17 @@ ContentChunk _cpGetFile(ContentProvider* cp) {
     ContentChunk c;
     memset(&c, 0, sizeof(c));
     
-    if (!cp->filepath) return c;
+    if (!cp->filepath) {
+        if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "File provider: no filepath set");
+        return c;
+    }
     
     FILE* f = fopen(cp->filepath, "r");
-    if (!f) return c;
+    if (!f) {
+        if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "File provider: could not open file");
+        return c;
+    }
     
-    // Read entire file into text buffer
     size_t total = 0;
     size_t n;
     while (total < sizeof(cp->text) - 1 && (n = fread(cp->text + total, 1, sizeof(cp->text) - 1 - total, f)) > 0) {
@@ -108,6 +124,8 @@ ContentChunk _cpGetFile(ContentProvider* cp) {
     
     fclose(f);
     
+    if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_DEBUG, "File provider: read file");
+    
     snprintf(c.text, sizeof(c.text), "%s", cp->text);
     c.length = cp->length;
     return c;
@@ -117,8 +135,7 @@ ContentChunk _cpGetDatabase(ContentProvider* cp) {
     ContentChunk c;
     memset(&c, 0, sizeof(c));
     
-    // Placeholder: database provider not yet implemented
-    // log(WARN, "Database ContentProvider is not implemented yet. Returning empty content.");
+    if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "Database ContentProvider not implemented, returning empty");
     
     return c;
 }
@@ -127,10 +144,8 @@ ContentChunk _cpGetWeb(ContentProvider* cp) {
     ContentChunk c;
     memset(&c, 0, sizeof(c));
     
-    // Placeholder: web provider not yet implemented
-    // log(WARN, "Web ContentProvider is not implemented yet. Redirected to default example string provider.");
+    if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "Web ContentProvider not implemented, using fallback");
     
-    // Fallback to default string
     snprintf(cp->text, sizeof(cp->text), "%s", "The quick brown fox jumps over the lazy dog.");
     cp->length = strlen(cp->text);
     cp->currentIndex = 0;

@@ -3,18 +3,23 @@
 
 #include <stdint.h>
 
-typedef struct Engine Engine; // Forward declaration of Engine struct
+typedef struct Engine Engine;
 
+/// @brief Session statistics populated by engineGetStats.
 typedef struct {
-    char timestamp[20];         ///< ISO 8601 format(YYYY-MM-DD HH:MM:SS) timestamp of the session
-    int64_t durationMs;         ///< Duration of the session in milliseconds
+    char timestamp[20];         ///< ISO 8601 timestamp (YYYY-MM-DD HH:MM:SS) of the stats snapshot
+    int64_t durationMs;         ///< Elapsed session time in milliseconds
     uint32_t correctKeystrokes; ///< Number of correctly pressed keys
-    uint32_t totalKeystrokes;   ///< Total number of keystrokes
-    double accuracy;            ///< Accuracy of the session
-    double wpm;                 ///< Words per minute (adjusted)
-    double wpmRaw;              ///< Words per minute (raw)
+    uint32_t totalKeystrokes;   ///< Total number of keystrokes (including incorrect)
+    double accuracy;            ///< Accuracy percentage (correct / total * 100)
+    double wpm;                 ///< Words per minute adjusted by accuracy (wpmRaw * accuracy / 100)
+    double wpmRaw;              ///< Raw words per minute (currentIndex / 5 / minutes)
 } SessionStats;
 
+/// @brief Get the current session statistics.
+/// @param engine The Engine instance.
+/// @return A SessionStats struct with the current statistics.
+///         Returns a zeroed struct if engine is NULL.
 SessionStats engineGetStats(Engine* engine);
 
 #endif // STATS_H

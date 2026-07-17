@@ -4,36 +4,40 @@
 #include <stdint.h>
 #include <stdio.h>
 
-typedef struct Engine Engine; // Forward declaration of Engine struct
+typedef struct Engine Engine;
 
+/// @brief Engine events that can trigger registered callbacks.
 typedef enum EngineEvent {
-    ENGINE_EVENT_NONE,
-    ENGINE_EVENT_STARTED,
-    ENGINE_EVENT_STOPPED,
-    ENGINE_EVENT_PAUSED,
-    ENGINE_EVENT_RESUMED,
-    ENGINE_EVENT_TIMEOUT,
-    ENGINE_EVENT_FINISHED,
-    ENGINE_EVENT_CORRECT_KEYSTROKE,
-    ENGINE_EVENT_INCORRECT_KEYSTROKE,
-    ENGINE_EVENT_BACKSPACE,
-    ENGINE_EVENT_SEGMENT_COMPLETED,
-    ENGINE_EVENT_ERROR
+    ENGINE_EVENT_NONE,                ///< No event / default
+    ENGINE_EVENT_STARTED,             ///< Engine started a session
+    ENGINE_EVENT_STOPPED,             ///< Engine stopped (user, finish, or timeout)
+    ENGINE_EVENT_PAUSED,              ///< Engine was paused
+    ENGINE_EVENT_RESUMED,             ///< Engine was resumed from pause
+    ENGINE_EVENT_TIMEOUT,             ///< Session exceeded configured timeout
+    ENGINE_EVENT_FINISHED,            ///< Session completed (all text typed)
+    ENGINE_EVENT_CORRECT_KEYSTROKE,   ///< A correct key was pressed
+    ENGINE_EVENT_INCORRECT_KEYSTROKE, ///< An incorrect key was pressed
+    ENGINE_EVENT_BACKSPACE,           ///< Backspace was pressed (flow mode)
+    ENGINE_EVENT_SEGMENT_COMPLETED,   ///< A text segment/chunk was completed
+    ENGINE_EVENT_ERROR                ///< An error occurred
 } EngineEvent;
 
-typedef void (*EngineCallback)(Engine* engine, void* userData); // Callback function type for engine events
+/// @brief Callback function type for engine events.
+/// @param engine   The Engine instance that fired the event.
+/// @param userData User-provided data registered with the callback.
+typedef void (*EngineCallback)(Engine* engine, void* userData);
 
-/// @brief Convert an EngineEvent to a string representation
-/// @param event The EngineEvent to convert
-/// @param buffer The buffer to store the string representation
-/// @param bufferSize The size of the buffer
+/// @brief Convert an EngineEvent enum value to its human-readable string.
+/// @param event      The EngineEvent to convert.
+/// @param buffer     Output buffer for the string.
+/// @param bufferSize Size of the output buffer.
 void engineEventToString(EngineEvent event, char* buffer, size_t bufferSize);
 
-/// @brief Handle an engine event
-/// @param engine The Engine instance
-/// @param event The EngineEvent to handle
-/// @param callback The callback function to execute for the event
-/// @param userData User-defined data to pass to the callback function
+/// @brief Convenience wrapper to register a callback for a single event type.
+/// @param engine   The Engine instance.
+/// @param event    The EngineEvent to listen for.
+/// @param callback The callback function to register.
+/// @param userData User-defined data passed to the callback when invoked.
 void onEngineEvent(Engine* engine, EngineEvent event, EngineCallback callback, void* userData);
 
 #endif // EVENT_H
