@@ -34,7 +34,10 @@ static const char* LEVEL_LABELS[] = {
 
 Logger* loggerCreate(LogLevel level, bool enableStdout) {
     Logger* logger = malloc(sizeof(Logger));
-    if (!logger) return NULL;
+    if (!logger) {
+        fprintf(stderr, "[ERROR] Failed to allocate Logger\n");
+        return NULL;
+    }
     logger->currentLevel = level;
     logger->stdoutEnabled = enableStdout;
     memset(logger->files, 0, sizeof(logger->files));

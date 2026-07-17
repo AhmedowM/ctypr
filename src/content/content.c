@@ -25,7 +25,10 @@ typedef struct ContentProvider {
 
 ContentProvider* contentProviderFromString(const char* text) {
     ContentProvider* cp = malloc(sizeof(ContentProvider));
-    if (!cp) return NULL;
+    if (!cp) {
+        fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (string)\n");
+        return NULL;
+    }
     snprintf(cp->text, sizeof(cp->text), "%s", text);
     cp->length = strlen(cp->text);
     cp->currentIndex = 0;
@@ -38,9 +41,17 @@ ContentProvider* contentProviderFromString(const char* text) {
 
 ContentProvider* contentProviderFromFile(const char* filepath) {
     ContentProvider* cp = malloc(sizeof(ContentProvider));
-    if (!cp) return NULL;
+    if (!cp) {
+        fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (file)\n");
+        return NULL;
+    }
     
     cp->filepath = strdup(filepath);
+    if (!cp->filepath) {
+        fprintf(stderr, "[ERROR] Failed to allocate filepath for ContentProvider\n");
+        free(cp);
+        return NULL;
+    }
     cp->text[0] = '\0';
     cp->length = 0;
     cp->currentIndex = 0;
@@ -52,9 +63,17 @@ ContentProvider* contentProviderFromFile(const char* filepath) {
 
 ContentProvider* contentProviderFromDatabase(const char* filepath) {
     ContentProvider* cp = malloc(sizeof(ContentProvider));
-    if (!cp) return NULL;
+    if (!cp) {
+        fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (database)\n");
+        return NULL;
+    }
     
     cp->filepath = strdup(filepath);
+    if (!cp->filepath) {
+        fprintf(stderr, "[ERROR] Failed to allocate filepath for ContentProvider\n");
+        free(cp);
+        return NULL;
+    }
     cp->text[0] = '\0';
     cp->length = 0;
     cp->currentIndex = 0;
@@ -66,9 +85,17 @@ ContentProvider* contentProviderFromDatabase(const char* filepath) {
 
 ContentProvider* contentProviderFromWeb(const char* url) {
     ContentProvider* cp = malloc(sizeof(ContentProvider));
-    if (!cp) return NULL;
+    if (!cp) {
+        fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (web)\n");
+        return NULL;
+    }
     
     cp->url = strdup(url);
+    if (!cp->url) {
+        fprintf(stderr, "[ERROR] Failed to allocate URL for ContentProvider\n");
+        free(cp);
+        return NULL;
+    }
     snprintf(cp->text, sizeof(cp->text), "%s", "The quick brown fox jumps over the lazy dog.");
     cp->length = strlen(cp->text);
     cp->currentIndex = 0;

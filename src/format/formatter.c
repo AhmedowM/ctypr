@@ -14,7 +14,10 @@ typedef struct Formatter {
 
 Formatter* formatterCreate(void) {
     Formatter* f = malloc(sizeof(Formatter));
-    if (!f) return NULL;
+    if (!f) {
+        fprintf(stderr, "[ERROR] Failed to allocate Formatter\n");
+        return NULL;
+    }
     f->buffer[0] = '\0';
     f->position = 0;
     f->logger = NULL;

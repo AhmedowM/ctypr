@@ -70,9 +70,17 @@ static int ensureInitialized(Repository* repo) {
 
 Repository* repositoryCreate(const char* dbPath) {
     Repository* repo = malloc(sizeof(Repository));
-    if (!repo) return NULL;
+    if (!repo) {
+        fprintf(stderr, "[ERROR] Failed to allocate Repository\n");
+        return NULL;
+    }
     
     repo->dbPath = strdup(dbPath ? dbPath : "typr.db");
+    if (!repo->dbPath) {
+        fprintf(stderr, "[ERROR] Failed to allocate dbPath for Repository\n");
+        free(repo);
+        return NULL;
+    }
     repo->initialized = 0;
     repo->logger = NULL;
     

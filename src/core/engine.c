@@ -128,7 +128,10 @@ static bool checkTimeout(Engine* self) {
 
 Engine* engineCreate(EngineMode mode, uint16_t timeout) {
     Engine* engine = malloc(sizeof(Engine));
-    if (!engine) return NULL;
+    if (!engine) {
+        fprintf(stderr, "[ERROR] Failed to allocate Engine\n");
+        return NULL;
+    }
     engine->mode = mode;
     engine->timeout = timeout;
     engine->state = ENGINE_IDLE;
@@ -138,6 +141,7 @@ Engine* engineCreate(EngineMode mode, uint16_t timeout) {
     engine->logger = NULL;
     engine->session = malloc(sizeof(Session));
     if (!engine->session) {
+        fprintf(stderr, "[ERROR] Failed to allocate Engine session\n");
         free(engine);
         return NULL;
     }
