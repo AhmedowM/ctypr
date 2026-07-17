@@ -27,6 +27,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 file(GLOB_RECURSE CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/content/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/format/*.c
 )
 
 # Configure version.h from template into build tree
