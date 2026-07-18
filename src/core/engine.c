@@ -199,14 +199,13 @@ Engine* engineCreate(const EngineConfig* config) {
     engine->contentProvider = config->contentProvider;
     engine->autoSaveRepo = config->autoSaveRepo;
     engine->autoSaveEnabled = config->autoSaveEnabled;
-    engine->session = malloc(sizeof(Session));
+    engine->session = calloc(1, sizeof(Session));
     if (!engine->session) {
         fprintf(stderr, "[ERROR] Failed to allocate Engine session\n");
         free(engine);
         return NULL;
     }
     memset(&engine->stats, 0, sizeof(SessionStats));
-    engine->session->isTimingStarted = false;
     return engine;
 }
 
