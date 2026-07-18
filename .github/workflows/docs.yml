@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y doxygen
+      - run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
       - run: cmake -B build -DBUILD_DOCS=ON
       - run: cmake --build build --target docs
       - uses: actions/configure-pages@v5
