@@ -2842,3 +2842,8 @@ html.dark-mode .bordered_image object[type="image/svg+xml"] {
 .primary-button:hover {
     background: var(--primary-dark-color);
 }
+
+#top { display: block !important; }
+#titlearea { display: flex; align-items: center; }
+#titlearea table { flex: 1; border: 0; }
+#titlearea table td { white-space: nowrap; }

@@ -15,4 +15,4 @@ HTML_OUTPUT            = html
 HTML_COLORSTYLE        = LIGHT
 HTML_EXTRA_STYLESHEET  = @PROJECT_SOURCE_DIR@/docs/doxygen-awesome.css
 HTML_EXTRA_FILES       = @PROJECT_SOURCE_DIR@/docs/doxygen-awesome-darkmode-toggle.js
-HTML_HEADER            = @PROJECT_SOURCE_DIR@/docs/header.html
+HTML_FOOTER            = @PROJECT_SOURCE_DIR@/docs/footer.html

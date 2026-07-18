@@ -1,0 +1,35 @@
+<!-- HTML footer for doxygen 1.13.2-->
+<!-- start footer part -->
+<!--BEGIN GENERATE_TREEVIEW-->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    $navpath
+    <li class="footer">$generatedby <a href="https://www.doxygen.org/index.html"><img class="footer" src="$relpath^doxygen.svg" width="104" height="31" alt="doxygen"/></a> $doxygenversion </li>
+  </ul>
+</div>
+<!--END GENERATE_TREEVIEW-->
+<!--BEGIN !GENERATE_TREEVIEW-->
+<hr class="footer"/><address class="footer"><small>
+$generatedby&#160;<a href="https://www.doxygen.org/index.html"><img class="footer" src="$relpath^doxygen.svg" width="104" height="31" alt="doxygen"/></a> $doxygenversion
+</small></address>
+</div><!-- doc-content -->
+<!--END !GENERATE_TREEVIEW-->
+
+<script type="text/javascript" src="$relpath^../doxygen-awesome-darkmode-toggle.js"></script>
+<script type="text/javascript">
+(function(){
+  var sb = document.getElementById("MSearchBox");
+  if (sb && sb.parentNode) {
+    var toggle = document.createElement("doxygen-awesome-dark-mode-toggle");
+    toggle.title = DoxygenAwesomeDarkModeToggle.title;
+    toggle.updateIcon();
+    toggle.onclick = function(){
+      DoxygenAwesomeDarkModeToggle.userPreference = !DoxygenAwesomeDarkModeToggle.darkModeEnabled;
+      this.updateIcon();
+    };
+    sb.parentNode.insertBefore(toggle, sb.nextSibling);
+  }
+})();
+</script>
+</body>
+</html>
