@@ -15,12 +15,12 @@ typedef struct ContentChunk {
     size_t length;   ///< Length of the text in bytes (excluding null terminator).
 } ContentChunk;
 
-/// @brief Query mode for the database-backed content provider.
-typedef enum ContentDbMode {
-    CONTENT_DB_COMMON_WORDS, ///< Select words ordered by frequency rank
-    CONTENT_DB_RANDOM_WORDS, ///< Select words in random order
-    CONTENT_DB_SENTENCES     ///< Select sentences
-} ContentDbMode;
+/// @brief Content selection mode for content providers.
+typedef enum ContentMode {
+    CONTENT_MODE_SENTENCES,    ///< Fetch full sentences (DB: typing_sentences table; File: lines)
+    CONTENT_MODE_COMMON_WORDS, ///< Fetch words by frequency (DB only; File: unsupported)
+    CONTENT_MODE_RANDOM_WORDS  ///< Fetch words in random order (DB: ORDER BY RANDOM(); File: shuffle)
+} ContentMode;
 
 // ── Factory Functions ────────────────────────────────────────────────────────
 
@@ -59,10 +59,10 @@ void contentProviderSetLogger(ContentProvider* self, Logger* logger);
 
 // ── Database Provider Configuration ──────────────────────────────────────────
 
-/// @brief Set the query mode for a database-backed content provider.
+/// @brief Set the content selection mode for the provider.
 /// @param self The ContentProvider instance.
-/// @param mode The ContentDbMode to use.
-void contentProviderSetDbMode(ContentProvider* self, ContentDbMode mode);
+/// @param mode The ContentMode to use.
+void contentProviderSetMode(ContentProvider* self, ContentMode mode);
 
 /// @brief Set the maximum number of rows to fetch from the database.
 /// @param self  The ContentProvider instance.

@@ -1,9 +1,11 @@
 #include "content.h"
+#include "formatter.h"
 #include "logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <sqlite3.h>
 
@@ -25,10 +27,11 @@ typedef struct ContentProvider {
     char* url;
     ContentProviderType type;
     Logger* logger;
+    const char* name;
 
-    ContentDbMode dbMode;
+    ContentMode mode;
     size_t contentLimit;
-    bool dbContentFetched;
+    bool contentFetched;
 } ContentProvider;
 
 ContentProvider* contentProviderFromString(const char* text) {
@@ -44,9 +47,10 @@ ContentProvider* contentProviderFromString(const char* text) {
     cp->filepath = NULL;
     cp->url = NULL;
     cp->logger = NULL;
-    cp->dbMode = CONTENT_DB_COMMON_WORDS;
+    cp->name = "StringProvider";
+    cp->mode = CONTENT_MODE_SENTENCES;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
-    cp->dbContentFetched = false;
+    cp->contentFetched = false;
     return cp;
 }
 
@@ -69,9 +73,10 @@ ContentProvider* contentProviderFromFile(const char* filepath) {
     cp->type = CONTENT_PROVIDER_FILE;
     cp->url = NULL;
     cp->logger = NULL;
-    cp->dbMode = CONTENT_DB_COMMON_WORDS;
+    cp->name = "FileProvider";
+    cp->mode = CONTENT_MODE_SENTENCES;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
-    cp->dbContentFetched = false;
+    cp->contentFetched = false;
     return cp;
 }
 
@@ -94,9 +99,10 @@ ContentProvider* contentProviderFromDatabase(const char* filepath) {
     cp->type = CONTENT_PROVIDER_DATABASE;
     cp->url = NULL;
     cp->logger = NULL;
-    cp->dbMode = CONTENT_DB_COMMON_WORDS;
+    cp->name = "DbProvider";
+    cp->mode = CONTENT_MODE_COMMON_WORDS;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
-    cp->dbContentFetched = false;
+    cp->contentFetched = false;
     return cp;
 }
 
@@ -119,9 +125,10 @@ ContentProvider* contentProviderFromWeb(const char* url) {
     cp->type = CONTENT_PROVIDER_WEB;
     cp->filepath = NULL;
     cp->logger = NULL;
-    cp->dbMode = CONTENT_DB_COMMON_WORDS;
+    cp->name = "WebProvider";
+    cp->mode = CONTENT_MODE_SENTENCES;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
-    cp->dbContentFetched = false;
+    cp->contentFetched = false;
     return cp;
 }
 
@@ -129,8 +136,8 @@ void contentProviderSetLogger(ContentProvider* self, Logger* logger) {
     if (self) self->logger = logger;
 }
 
-void contentProviderSetDbMode(ContentProvider* self, ContentDbMode mode) {
-    if (self) self->dbMode = mode;
+void contentProviderSetMode(ContentProvider* self, ContentMode mode) {
+    if (self) self->mode = mode;
 }
 
 void contentProviderSetContentLimit(ContentProvider* self, size_t limit) {
@@ -162,7 +169,7 @@ static ContentChunk _cpGetFile(ContentProvider* cp) {
         return c;
     }
 
-    FILE* f = fopen(cp->filepath, "r");
+    FILE* f = fopen(cp->filepath, "rb");
     if (!f) {
         if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "File provider: could not open file");
         return c;
@@ -178,6 +185,41 @@ static ContentChunk _cpGetFile(ContentProvider* cp) {
     cp->currentIndex = 0;
 
     fclose(f);
+
+    if (cp->mode == CONTENT_MODE_RANDOM_WORDS) {
+        char* words[2048];
+        int wordCount = 0;
+        char* token = strtok(cp->text, " \t\n\r");
+        while (token && wordCount < 2048) {
+            words[wordCount++] = token;
+            token = strtok(NULL, " \t\n\r");
+        }
+        for (int i = wordCount - 1; i > 0; i--) {
+            int j = rand() % (i + 1);
+            char* tmp = words[i];
+            words[i] = words[j];
+            words[j] = tmp;
+        }
+        size_t pos = 0;
+        for (int i = 0; i < wordCount; i++) {
+            size_t wlen = strlen(words[i]);
+            if (pos + wlen + 1 >= sizeof(cp->text)) break;
+            if (i > 0) cp->text[pos++] = ' ';
+            memcpy(cp->text + pos, words[i], wlen);
+            pos += wlen;
+        }
+        cp->text[pos] = '\0';
+        cp->length = pos;
+    } else if (cp->mode == CONTENT_MODE_SENTENCES && cp->length > 256) {
+        Formatter* fmt = formatterCreate();
+        if (fmt) {
+            if (cp->logger) formatterSetLogger(fmt, cp->logger);
+            ContentChunk fmtChunk = formatterFormat(fmt, cp->text, 256);
+            snprintf(cp->text, sizeof(cp->text), "%s", fmtChunk.text);
+            cp->length = fmtChunk.length;
+            formatterDestroy(fmt);
+        }
+    }
 
     if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_DEBUG, "File provider: read file");
 
@@ -211,7 +253,7 @@ static ContentChunk _cpGetDatabase(ContentProvider* cp) {
         return c;
     }
 
-    if (cp->dbContentFetched) {
+    if (cp->contentFetched) {
         if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_DEBUG, "Database provider: content already fetched");
         return c;
     }
@@ -225,14 +267,14 @@ static ContentChunk _cpGetDatabase(ContentProvider* cp) {
     }
 
     const char* query = NULL;
-    switch (cp->dbMode) {
-        case CONTENT_DB_COMMON_WORDS:
+    switch (cp->mode) {
+        case CONTENT_MODE_COMMON_WORDS:
             query = "SELECT word FROM common_words ORDER BY frequency_rank ASC LIMIT ?";
             break;
-        case CONTENT_DB_RANDOM_WORDS:
+        case CONTENT_MODE_RANDOM_WORDS:
             query = "SELECT word FROM random_words ORDER BY RANDOM() LIMIT ?";
             break;
-        case CONTENT_DB_SENTENCES:
+        case CONTENT_MODE_SENTENCES:
             query = "SELECT text_content FROM typing_sentences LIMIT ?";
             break;
     }
@@ -259,7 +301,7 @@ static ContentChunk _cpGetDatabase(ContentProvider* cp) {
 
     cp->length = offset;
     cp->currentIndex = 0;
-    cp->dbContentFetched = true;
+    cp->contentFetched = true;
 
     if (cp->logger) {
         if (offset > 0) {
@@ -303,11 +345,7 @@ ContentChunk contentProviderGetNext(ContentProvider *provider) {
 void contentProviderReset(ContentProvider* provider) {
     if (!provider) return;
     provider->currentIndex = 0;
-    if (provider->type == CONTENT_PROVIDER_DATABASE) {
-        provider->dbContentFetched = false;
-        provider->text[0] = '\0';
-        provider->length = 0;
-    }
+    provider->contentFetched = false;
 }
 
 bool contentProviderIsExhausted(ContentProvider* provider) {

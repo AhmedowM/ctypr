@@ -10,6 +10,8 @@ typedef enum EngineError {
     ENGINE_ERROR_INVALID_TIMEOUT, ///< Invalid timeout value
     ENGINE_ERROR_ALREADY_RUNNING, ///< Operation failed because engine is already running
     ENGINE_ERROR_NOT_RUNNING,     ///< Operation failed because engine is not running
+    ENGINE_ERROR_CONFIG,          ///< Invalid engine configuration
+    ENGINE_ERROR_CONTENT,         ///< Content provider returned empty or missing text
     ENGINE_ERROR_UNKNOWN          ///< Unknown or unspecified error
 } EngineError;
 

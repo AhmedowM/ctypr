@@ -6,6 +6,7 @@
 #include "stats.h"
 #include "logger.h"
 #include "signal_internal.h"
+#include "content.h"
 #include "../db/repository.h"
 
 #include <stdint.h>
@@ -26,7 +27,7 @@ typedef struct Session {
     char text[4096];
     size_t length;
     uint32_t currentIndex;
-    uint16_t incorrectKeystrokesIndices[4096];
+    uint8_t incorrectKeystrokesBitmap[4096];
 
     ctypr_time_t segmentStartTime;
     ctypr_time_t segmentEndTime;
@@ -56,14 +57,6 @@ static int64_t timeDiffMs(ctypr_time_t* end, ctypr_time_t* start) {
 #endif
 }
 
-static void clearArray(uint16_t* array, size_t size) {
-    if (array) {
-        for (size_t i = 0; i < size; ++i) {
-            array[i] = 0;
-        }
-    }
-}
-
 void updateTime(Session* session) {
     if (!session) return;
     if (!session->isTimingStarted) return;
@@ -90,6 +83,8 @@ typedef struct Engine {
     Session* session;
     SessionStats stats;
     Logger* logger;
+    const char* name;
+    ContentProvider* contentProvider;
     Repository* autoSaveRepo;
     bool autoSaveEnabled;
 } Engine;
@@ -165,18 +160,25 @@ static bool checkTimeout(Engine* self) {
     return false;
 }
 
-Engine* engineCreate(EngineMode mode, uint16_t timeout) {
+Engine* engineCreate(const EngineConfig* config) {
+    if (!config || config->mode == UnknownMode || !config->contentProvider) {
+        return NULL;
+    }
     Engine* engine = calloc(1, sizeof(Engine));
     if (!engine) {
         fprintf(stderr, "[ERROR] Failed to allocate Engine\n");
         return NULL;
     }
-    engine->mode = mode;
-    engine->timeout = timeout;
+    engine->mode = config->mode;
+    engine->timeout = config->timeout;
     engine->state = ENGINE_IDLE;
     engine->lastError = ENGINE_ERROR_NONE;
     engine->stopCause = ENGINE_STOP_CAUSE_NONE;
     engine->logger = NULL;
+    engine->name = "Engine";
+    engine->contentProvider = config->contentProvider;
+    engine->autoSaveRepo = config->autoSaveRepo;
+    engine->autoSaveEnabled = config->autoSaveEnabled;
     engine->session = malloc(sizeof(Session));
     if (!engine->session) {
         fprintf(stderr, "[ERROR] Failed to allocate Engine session\n");
@@ -185,7 +187,6 @@ Engine* engineCreate(EngineMode mode, uint16_t timeout) {
     }
     memset(&engine->stats, 0, sizeof(SessionStats));
     engine->session->isTimingStarted = false;
-    clearArray(engine->session->incorrectKeystrokesIndices, 4096);
     return engine;
 }
 
@@ -198,7 +199,18 @@ void engineDestroy(Engine *self) {
 }
 
 void engineSetLogger(Engine* self, Logger* logger) {
-    if (self) self->logger = logger;
+    if (self) {
+        self->logger = logger;
+        if (self->contentProvider) contentProviderSetLogger(self->contentProvider, logger);
+        if (self->autoSaveRepo) repositorySetLogger(self->autoSaveRepo, logger);
+    }
+}
+
+void engineSetContentProvider(Engine* self, ContentProvider* provider) {
+    if (self) {
+        self->contentProvider = provider;
+        if (provider && self->logger) contentProviderSetLogger(provider, self->logger);
+    }
 }
 
 void engineSetAutoSave(Engine* self, Repository* repo, bool enabled) {
@@ -233,17 +245,30 @@ void engineStart(Engine *self) {
             if (self->logger) loggerLog(self->logger, LOG_LEVEL_WARNING, "engineStart: already running");
             return;
         }
+        if (!self->contentProvider) {
+            self->lastError = ENGINE_ERROR_CONTENT;
+            self->state = ENGINE_ERROR;
+            if (self->logger) loggerLog(self->logger, LOG_LEVEL_ERROR, "engineStart: no content provider");
+            return;
+        }
+        ContentChunk chunk = contentProviderGetNext(self->contentProvider);
+        if (chunk.length == 0) {
+            self->lastError = ENGINE_ERROR_CONTENT;
+            self->state = ENGINE_ERROR;
+            if (self->logger) loggerLog(self->logger, LOG_LEVEL_ERROR, "engineStart: content provider returned empty text");
+            return;
+        }
         self->state = ENGINE_RUNNING;
         self->lastError = ENGINE_ERROR_NONE;
         self->stopCause = ENGINE_STOP_CAUSE_NONE;
         memset(&self->stats, 0, sizeof(SessionStats));
-        snprintf(self->session->text, sizeof(self->session->text), "%s", "The quick brown fox jumps over the lazy dog.");
+        snprintf(self->session->text, sizeof(self->session->text), "%s", chunk.text);
         self->session->length = strlen(self->session->text);
         self->session->currentIndex = 0;
         getCurrentTime(&self->session->segmentStartTime);
         self->session->isTimingStarted = true;
         self->session->accumulatedTimeMs = 0;
-        clearArray(self->session->incorrectKeystrokesIndices, 4096);
+        memset(self->session->incorrectKeystrokesBitmap, 0, sizeof(self->session->incorrectKeystrokesBitmap));
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session started");
         signalEmit(&self->onStarted, self);
     }
@@ -262,6 +287,7 @@ void engineStop(Engine *self) {
         updateTime(self->session);
         self->session->isTimingStarted = false;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session stopped by user");
+        autoSaveSession(self);
         signalEmit(&self->onStopped, self);
     }
 }
@@ -316,7 +342,7 @@ void engineReset(Engine *self) {
         self->session->currentIndex = 0;
         self->session->isTimingStarted = false;
         self->session->accumulatedTimeMs = 0;
-        clearArray(self->session->incorrectKeystrokesIndices, 4096);
+        memset(self->session->incorrectKeystrokesBitmap, 0, sizeof(self->session->incorrectKeystrokesBitmap));
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session reset");
     }
 }
@@ -335,7 +361,7 @@ void engineKeyPress_Strict(Engine *self, char key) {
         signalEmit(&self->onCorrectKeystroke, self);
         tryCompleteSession(self);
     } else {
-        self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
+        self->session->incorrectKeystrokesBitmap[self->session->currentIndex] = 1;
         self->stats.incorrectKeystrokes++;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Strict: incorrect key");
         signalEmit(&self->onIncorrectKeystroke, self);
@@ -354,7 +380,7 @@ void engineKeyPress_Flow(Engine *self, char key) {
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: correct key");
         signalEmit(&self->onCorrectKeystroke, self);
     } else {
-        self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
+        self->session->incorrectKeystrokesBitmap[self->session->currentIndex] = 1;
         self->stats.incorrectKeystrokes++;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: incorrect key");
         signalEmit(&self->onIncorrectKeystroke, self);
@@ -381,7 +407,7 @@ void engineBackspacePress_Flow(Engine *self) {
     if (checkTimeout(self)) return;
     if (self->session->currentIndex <= 0) return;
     self->session->currentIndex--;
-    uint16_t *was_incorrect = &self->session->incorrectKeystrokesIndices[self->session->currentIndex];
+    uint8_t *was_incorrect = &self->session->incorrectKeystrokesBitmap[self->session->currentIndex];
     if (*was_incorrect == 1) {
         *was_incorrect = 0;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: backspace over incorrect key");
@@ -508,6 +534,8 @@ void engineErrorToString(EngineError error, char* buffer, size_t bufferSize) {
         case ENGINE_ERROR_INVALID_TIMEOUT: errorString = "Invalid Timeout"; break;
         case ENGINE_ERROR_ALREADY_RUNNING: errorString = "Already Running"; break;
         case ENGINE_ERROR_NOT_RUNNING: errorString = "Not Running"; break;
+        case ENGINE_ERROR_CONFIG: errorString = "Config Error"; break;
+        case ENGINE_ERROR_CONTENT: errorString = "Content Error"; break;
         case ENGINE_ERROR_UNKNOWN: errorString = "Unknown Error"; break;
     }
     snprintf(buffer, bufferSize, "%s", errorString);

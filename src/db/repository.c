@@ -11,6 +11,8 @@ typedef struct Repository {
     char* dbPath;
     int initialized;
     Logger* logger;
+    const char* name;
+    sqlite3* db;
 } Repository;
 
 static const char* SCHEMA = R"(
@@ -43,26 +45,25 @@ static int ensureInitialized(Repository* repo) {
     char* fullPath = getFullPath(repo->dbPath);
     if (!fullPath) return -1;
     
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
+    int rc = sqlite3_open(fullPath, &repo->db);
     free(fullPath);
     
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
+    if (rc != SQLITE_OK || repo->db == NULL) {
+        if (repo->db) { sqlite3_close(repo->db); repo->db = NULL; }
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: failed to open database");
         return -1;
     }
     
     char* errMsg = NULL;
-    rc = sqlite3_exec(db, SCHEMA, NULL, NULL, &errMsg);
+    rc = sqlite3_exec(repo->db, SCHEMA, NULL, NULL, &errMsg);
     if (rc != SQLITE_OK) {
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: failed to create schema");
         if (errMsg) sqlite3_free(errMsg);
-        sqlite3_close(db);
+        sqlite3_close(repo->db);
+        repo->db = NULL;
         return -1;
     }
     
-    sqlite3_close(db);
     repo->initialized = 1;
     if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_INFO, "Repository: database initialized");
     return 0;
@@ -83,6 +84,8 @@ Repository* repositoryCreate(const char* dbPath) {
     }
     repo->initialized = 0;
     repo->logger = NULL;
+    repo->name = "Repository";
+    repo->db = NULL;
     
     return repo;
 }
@@ -94,6 +97,7 @@ void repositorySetLogger(Repository* self, Logger* logger) {
 void repositoryDestroy(Repository* repo) {
     if (repo) {
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository destroyed");
+        if (repo->db) sqlite3_close(repo->db);
         free(repo->dbPath);
         free(repo);
     }
@@ -131,26 +135,12 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
     if (!repo || !data) return -1;
     if (ensureInitialized(repo) != 0) return -1;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return -1;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - open failed");
-        if (db) sqlite3_close(db);
-        return -1;
-    }
-    
     const char* sql = "INSERT INTO sessions (timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - prepare failed");
-        sqlite3_close(db);
         return -1;
     }
     
@@ -165,16 +155,14 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
     
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_DONE) {
-        int64_t id = sqlite3_last_insert_rowid(db);
+        int64_t id = sqlite3_last_insert_rowid(repo->db);
         sqlite3_finalize(stmt);
-        sqlite3_close(db);
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository: session saved");
         return id;
     }
     
     if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - step failed");
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
     return -1;
 }
 
@@ -185,38 +173,21 @@ SessionData repositoryGetSession(Repository* repo, int64_t id) {
     if (!repo) return data;
     if (ensureInitialized(repo) != 0) return data;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return data;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: getSession - open failed");
-        if (db) sqlite3_close(db);
-        return data;
-    }
-    
     const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions WHERE id = ?";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         return data;
     }
     
     sqlite3_bind_int64(stmt, 1, id);
     
-    rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
         rowToSessionData(stmt, &data);
     }
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    
     return data;
 }
 
@@ -227,39 +198,20 @@ SessionData* repositoryGetAll(Repository* repo, size_t* count) {
         return NULL;
     }
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) {
-        *count = 0;
-        return NULL;
-    }
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        *count = 0;
-        return NULL;
-    }
-    
     const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY id DESC";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         *count = 0;
         return NULL;
     }
     
-    // Count rows first
     size_t capacity = 16;
     size_t n = 0;
     SessionData* results = malloc(capacity * sizeof(SessionData));
     if (!results) {
         sqlite3_finalize(stmt);
-        sqlite3_close(db);
         *count = 0;
         return NULL;
     }
@@ -271,7 +223,6 @@ SessionData* repositoryGetAll(Repository* repo, size_t* count) {
             if (!tmp) {
                 free(results);
                 sqlite3_finalize(stmt);
-                sqlite3_close(db);
                 *count = 0;
                 return NULL;
             }
@@ -282,8 +233,6 @@ SessionData* repositoryGetAll(Repository* repo, size_t* count) {
     }
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    
     *count = n;
     return results;
 }
@@ -295,28 +244,11 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
         return NULL;
     }
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) {
-        *count = 0;
-        return NULL;
-    }
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        *count = 0;
-        return NULL;
-    }
-    
     const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY id DESC LIMIT ?";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         *count = 0;
         return NULL;
     }
@@ -328,7 +260,6 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
     SessionData* results = malloc(capacity * sizeof(SessionData));
     if (!results) {
         sqlite3_finalize(stmt);
-        sqlite3_close(db);
         *count = 0;
         return NULL;
     }
@@ -340,7 +271,6 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
             if (!tmp) {
                 free(results);
                 sqlite3_finalize(stmt);
-                sqlite3_close(db);
                 *count = 0;
                 return NULL;
             }
@@ -351,8 +281,6 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
     }
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    
     *count = n;
     return results;
 }
@@ -361,24 +289,11 @@ int64_t repositoryGetCount(Repository* repo) {
     if (!repo) return 0;
     if (ensureInitialized(repo) != 0) return 0;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return 0;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        return 0;
-    }
-    
     const char* sql = "SELECT COUNT(*) FROM sessions";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         return 0;
     }
     
@@ -388,8 +303,6 @@ int64_t repositoryGetCount(Repository* repo) {
     }
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    
     return count;
 }
 
@@ -397,34 +310,20 @@ bool repositoryDeleteSession(Repository* repo, int64_t id) {
     if (!repo) return false;
     if (ensureInitialized(repo) != 0) return false;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return false;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        return false;
-    }
-    
     const char* sql = "DELETE FROM sessions WHERE id = ?";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         return false;
     }
     
     sqlite3_bind_int64(stmt, 1, id);
     
     rc = sqlite3_step(stmt);
-    bool success = (rc == SQLITE_DONE && sqlite3_changes(db) > 0);
+    bool success = (rc == SQLITE_DONE && sqlite3_changes(repo->db) > 0);
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
     
     if (repo->logger) {
         if (success) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository: session deleted");
@@ -438,30 +337,16 @@ void repositoryClearAll(Repository* repo) {
     if (!repo) return;
     if (ensureInitialized(repo) != 0) return;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        return;
-    }
-    
     const char* sql = "DELETE FROM sessions";
     
     char* errMsg = NULL;
-    rc = sqlite3_exec(db, sql, NULL, NULL, &errMsg);
+    int rc = sqlite3_exec(repo->db, sql, NULL, NULL, &errMsg);
     if (rc != SQLITE_OK) {
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: clearAll failed");
         if (errMsg) sqlite3_free(errMsg);
     } else {
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_WARNING, "Repository: all sessions cleared");
     }
-    
-    sqlite3_close(db);
 }
 
 SessionData repositoryGetBestWpm(Repository* repo) {
@@ -471,24 +356,11 @@ SessionData repositoryGetBestWpm(Repository* repo) {
     if (!repo) return data;
     if (ensureInitialized(repo) != 0) return data;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return data;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        return data;
-    }
-    
     const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY wpm DESC LIMIT 1";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         return data;
     }
     
@@ -497,8 +369,6 @@ SessionData repositoryGetBestWpm(Repository* repo) {
     }
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    
     return data;
 }
 
@@ -509,24 +379,11 @@ SessionData repositoryGetBestRawWpm(Repository* repo) {
     if (!repo) return data;
     if (ensureInitialized(repo) != 0) return data;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return data;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        return data;
-    }
-    
     const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY wpm_raw DESC LIMIT 1";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         return data;
     }
     
@@ -535,8 +392,6 @@ SessionData repositoryGetBestRawWpm(Repository* repo) {
     }
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    
     return data;
 }
 
@@ -544,24 +399,11 @@ double repositoryGetAverageWpm(Repository* repo) {
     if (!repo) return 0.0;
     if (ensureInitialized(repo) != 0) return 0.0;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return 0.0;
-    
-    sqlite3* db = NULL;
-    int rc = sqlite3_open(fullPath, &db);
-    free(fullPath);
-    
-    if (rc != SQLITE_OK || db == NULL) {
-        if (db) sqlite3_close(db);
-        return 0.0;
-    }
-    
     const char* sql = "SELECT AVG(wpm) FROM sessions";
     
     sqlite3_stmt* stmt = NULL;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        sqlite3_close(db);
         return 0.0;
     }
     
@@ -571,7 +413,5 @@ double repositoryGetAverageWpm(Repository* repo) {
     }
     
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    
     return avg;
 }

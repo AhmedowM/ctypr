@@ -74,7 +74,12 @@ int main(void) {
 
     /* 5. Engine */
     printf("\n── 5. Engine ───────────────────────────────────────────\n");
-    Engine* engine = engineCreate(FlowMode, 30);
+    EngineConfig engineConfig = {
+        .mode = FlowMode,
+        .timeout = 30,
+        .contentProvider = content
+    };
+    Engine* engine = engineCreate(&engineConfig);
     if (!engine) {
         fprintf(stderr, "Failed to create engine\n");
         formatterDestroy(formatter);
@@ -98,10 +103,9 @@ int main(void) {
     printf("\n── 6. Typing Session ───────────────────────────────────\n");
     engineStart(engine);
     printf("  State: %s\n", engineIsRunning(engine) ? "RUNNING" : "?");
-    printf("  Text:  \"The quick brown fox jumps over the lazy dog.\"\n");
+    printf("  Text:  \"%s\"\n", rawContent.text);
 
-    const char* engineText = "The quick brown fox jumps over the lazy dog.";
-    for (const char* p = engineText; *p; p++) {
+    for (const char* p = rawContent.text; *p; p++) {
         engineKeyPress(engine, *p);
         if (engineIsCompleted(engine) || engineIsTimedOut(engine)) break;
     }
@@ -178,10 +182,10 @@ int main(void) {
          *   typing_sentences(id, text_content, char_count, word_count, ...)
          * A missing DB returns empty content.
          *
-         * See src/content/content.h for ContentDbMode and configuration. */
+         * See src/content/content.h for ContentMode and configuration. */
         ContentProvider* dbContent = contentProviderFromDatabase("nonexistent.db");
         contentProviderSetLogger(dbContent, log);
-        contentProviderSetDbMode(dbContent, CONTENT_DB_COMMON_WORDS);
+        contentProviderSetMode(dbContent, CONTENT_MODE_COMMON_WORDS);
         contentProviderSetContentLimit(dbContent, 50);
         ContentChunk dbChunk = contentProviderGetNext(dbContent);
         printf("  DB content length: %zu (0 = file missing/empty)\n", dbChunk.length);
@@ -205,6 +209,7 @@ int main(void) {
     contentProviderDestroy(content);
     repositoryDestroy(repo);
     loggerDestroy(log);
+    remove("typr_demo.db");
 
     printf("\n=== Demo complete ===\n");
     return 0;

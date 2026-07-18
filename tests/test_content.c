@@ -130,20 +130,21 @@ static void test_string_provider_reset(void) {
 static void test_file_provider(void) {
     TEST("File provider: create and read file");
 
-    FILE* f = fopen("test_content.txt", "w");
+    FILE* f = fopen("test_content.txt", "wb");
     if (!f) {
         printf("SKIPPED (cannot create test file)\n");
         return;
     }
-    fprintf(f, "File content test\n");
+    const char* testText = "File content test";
+    fwrite(testText, 1, strlen(testText), f);
     fclose(f);
 
     ContentProvider* cp = contentProviderFromFile("test_content.txt");
     ASSERT(cp != NULL, "provider should not be NULL");
 
     ContentChunk chunk = contentProviderGetNext(cp);
-    ASSERT(strcmp(chunk.text, "File content test\n") == 0, "text should match file content");
-    ASSERT(chunk.length == 18, "length should be 18");
+    ASSERT(strcmp(chunk.text, "File content test") == 0, "text should match file content");
+    ASSERT(chunk.length == 17, "length should be 17");
 
     contentProviderDestroy(cp);
     remove("test_content.txt");
@@ -169,7 +170,7 @@ static void test_database_common_words(void) {
 
     ContentProvider* cp = contentProviderFromDatabase(TEST_DB);
     ASSERT(cp != NULL, "provider should not be NULL");
-    contentProviderSetDbMode(cp, CONTENT_DB_COMMON_WORDS);
+    contentProviderSetMode(cp, CONTENT_MODE_COMMON_WORDS);
     contentProviderSetContentLimit(cp, 10);
 
     ContentChunk chunk = contentProviderGetNext(cp);
@@ -189,7 +190,7 @@ static void test_database_random_words(void) {
 
     ContentProvider* cp = contentProviderFromDatabase(TEST_DB);
     ASSERT(cp != NULL, "provider should not be NULL");
-    contentProviderSetDbMode(cp, CONTENT_DB_RANDOM_WORDS);
+    contentProviderSetMode(cp, CONTENT_MODE_RANDOM_WORDS);
     contentProviderSetContentLimit(cp, 10);
 
     ContentChunk chunk = contentProviderGetNext(cp);
@@ -208,7 +209,7 @@ static void test_database_sentences(void) {
 
     ContentProvider* cp = contentProviderFromDatabase(TEST_SENTENCE_DB);
     ASSERT(cp != NULL, "provider should not be NULL");
-    contentProviderSetDbMode(cp, CONTENT_DB_SENTENCES);
+    contentProviderSetMode(cp, CONTENT_MODE_SENTENCES);
     contentProviderSetContentLimit(cp, 10);
 
     ContentChunk chunk = contentProviderGetNext(cp);
@@ -266,7 +267,7 @@ static void test_database_reset(void) {
 
     ContentProvider* cp = contentProviderFromDatabase(TEST_DB);
     ASSERT(cp != NULL, "provider should not be NULL");
-    contentProviderSetDbMode(cp, CONTENT_DB_COMMON_WORDS);
+    contentProviderSetMode(cp, CONTENT_MODE_COMMON_WORDS);
     contentProviderSetContentLimit(cp, 10);
 
     ContentChunk chunk1 = contentProviderGetNext(cp);
@@ -292,7 +293,7 @@ static void test_database_content_limit(void) {
 
     ContentProvider* cp = contentProviderFromDatabase(TEST_DB);
     ASSERT(cp != NULL, "provider should not be NULL");
-    contentProviderSetDbMode(cp, CONTENT_DB_COMMON_WORDS);
+    contentProviderSetMode(cp, CONTENT_MODE_COMMON_WORDS);
     contentProviderSetContentLimit(cp, 2);
 
     ContentChunk chunk = contentProviderGetNext(cp);

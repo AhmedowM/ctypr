@@ -5,6 +5,7 @@
 #include "state.h"
 #include "stats.h"
 #include "repository.h"
+#include "content.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,6 +39,26 @@ static int test_count = 0;
 #define ASSERT(cond, msg) do { \
     if (!(cond)) { FAIL(msg); return; } \
 } while(0)
+
+static ContentProvider* sharedTestContent = NULL;
+
+static void initTestContent(void) {
+    if (!sharedTestContent) {
+        sharedTestContent = contentProviderFromString("The quick brown fox jumps over the lazy dog.");
+    }
+    if (sharedTestContent) contentProviderReset(sharedTestContent);
+}
+
+static Engine* createTestEngine(EngineMode mode, uint16_t timeout) {
+    initTestContent();
+    if (!sharedTestContent) return NULL;
+    EngineConfig config = {
+        .mode = mode,
+        .timeout = timeout,
+        .contentProvider = sharedTestContent
+    };
+    return engineCreate(&config);
+}
 
 typedef struct {
     bool started;
@@ -113,7 +134,7 @@ static void on_timeout(Engine* e, void* data) {
 
 static void test_create_destroy(void) {
     TEST("Engine creation and destruction");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     ASSERT(engineGetMode(e) == StrictMode, "mode should be StrictMode");
     ASSERT(engineGetTimeout(e) == 0, "timeout should be 0");
@@ -124,7 +145,7 @@ static void test_create_destroy(void) {
 
 static void test_mode(void) {
     TEST("Mode get/set");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     ASSERT(engineGetMode(e) == StrictMode, "initial mode should be StrictMode");
     engineSetMode(e, FlowMode);
@@ -137,7 +158,7 @@ static void test_mode(void) {
 
 static void test_timeout(void) {
     TEST("Timeout get/set");
-    Engine* e = engineCreate(StrictMode, 30);
+    Engine* e = createTestEngine(StrictMode, 30);
     ASSERT(e != NULL, "engineCreate returned NULL");
     ASSERT(engineGetTimeout(e) == 30, "initial timeout should be 30");
     engineSetTimeout(e, 60);
@@ -148,7 +169,7 @@ static void test_timeout(void) {
 
 static void test_state_transitions(void) {
     TEST("State transitions: start -> stop");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     ASSERT(engineIsIdle(e), "should be idle initially");
     
@@ -165,7 +186,7 @@ static void test_state_transitions(void) {
 
 static void test_pause_resume(void) {
     TEST("State transitions: start -> pause -> resume -> stop");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -186,7 +207,7 @@ static void test_pause_resume(void) {
 
 static void test_reset(void) {
     TEST("State transitions: start -> reset");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -202,7 +223,7 @@ static void test_reset(void) {
 
 static void test_strict_correct_key(void) {
     TEST("Strict mode: correct key advances");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -221,7 +242,7 @@ static void test_strict_correct_key(void) {
 
 static void test_strict_incorrect_key(void) {
     TEST("Strict mode: incorrect key does not advance");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -245,7 +266,7 @@ static void test_strict_incorrect_key(void) {
 
 static void test_strict_backspace_disabled(void) {
     TEST("Strict mode: backspace is disabled");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -264,7 +285,7 @@ static void test_strict_backspace_disabled(void) {
 
 static void test_flow_correct_key(void) {
     TEST("Flow mode: correct key advances");
-    Engine* e = engineCreate(FlowMode, 0);
+    Engine* e = createTestEngine(FlowMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -282,7 +303,7 @@ static void test_flow_correct_key(void) {
 
 static void test_flow_incorrect_key_advances(void) {
     TEST("Flow mode: incorrect key still advances");
-    Engine* e = engineCreate(FlowMode, 0);
+    Engine* e = createTestEngine(FlowMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -305,7 +326,7 @@ static void test_flow_incorrect_key_advances(void) {
 
 static void test_flow_backspace_correct(void) {
     TEST("Flow mode: backspace over correct key");
-    Engine* e = engineCreate(FlowMode, 0);
+    Engine* e = createTestEngine(FlowMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -330,7 +351,7 @@ static void test_flow_backspace_correct(void) {
 
 static void test_flow_backspace_incorrect(void) {
     TEST("Flow mode: backspace over incorrect key");
-    Engine* e = engineCreate(FlowMode, 0);
+    Engine* e = createTestEngine(FlowMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -359,7 +380,7 @@ static void test_flow_backspace_incorrect(void) {
 
 static void test_session_complete_strict(void) {
     TEST("Strict mode: session completion fires events");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -387,7 +408,7 @@ static void test_session_complete_strict(void) {
 
 static void test_session_complete_flow(void) {
     TEST("Flow mode: session completion fires events");
-    Engine* e = engineCreate(FlowMode, 0);
+    Engine* e = createTestEngine(FlowMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -415,7 +436,7 @@ static void test_session_complete_flow(void) {
 
 static void test_callbacks(void) {
     TEST("Callback system: all lifecycle events fire");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -454,7 +475,7 @@ static void test_callbacks(void) {
 
 static void test_error_already_running(void) {
     TEST("Error handling: start when already running");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -470,7 +491,7 @@ static void test_error_already_running(void) {
 
 static void test_error_not_running(void) {
     TEST("Error handling: stop when not running");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStop(e);
@@ -504,7 +525,7 @@ static void test_error_to_string_all(void) {
 
 static void test_pause_error_path(void) {
     TEST("Error handling: pause when not running");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     ASSERT(engineIsIdle(e), "should be idle");
@@ -517,7 +538,7 @@ static void test_pause_error_path(void) {
 
 static void test_resume_error_path(void) {
     TEST("Error handling: resume when not paused");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -568,7 +589,7 @@ static void test_null_safety(void) {
 
 static void test_stats_accuracy(void) {
     TEST("Stats: accuracy calculation");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -589,7 +610,7 @@ static void test_stats_accuracy(void) {
 
 static void test_stats_wpm(void) {
     TEST("Stats: WPM calculation");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -653,7 +674,7 @@ static void test_event_to_string(void) {
 
 static void test_state_info(void) {
     TEST("State info: engineGetStateInfo");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     EngineStateInfo info = engineGetStateInfo(e);
@@ -679,7 +700,7 @@ static void test_state_info(void) {
 
 static void test_multiple_callbacks(void) {
     TEST("Multiple callbacks for same event");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags1, flags2;
@@ -703,7 +724,7 @@ static void test_multiple_callbacks(void) {
 
 static void test_max_callbacks(void) {
     TEST("Max callbacks limit per event");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -723,7 +744,7 @@ static void test_max_callbacks(void) {
 
 static void test_multi_event_slots(void) {
     TEST("Different event types have independent slot limits");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -743,7 +764,7 @@ static void test_multi_event_slots(void) {
 
 static void test_signal_disconnect(void) {
     TEST("Signal: disconnect removes callback");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -763,7 +784,7 @@ static void test_signal_disconnect(void) {
 
 static void test_signal_clear(void) {
     TEST("Signal: clear removes all callbacks for an event");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags1, flags2;
@@ -784,7 +805,7 @@ static void test_signal_clear(void) {
 
 static void test_signal_clear_isolation(void) {
     TEST("Signal: clearing one event does not affect others");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -807,7 +828,7 @@ static void test_signal_clear_isolation(void) {
 
 static void test_flow_backspace_retry(void) {
     TEST("Flow mode: backspace incorrect, retype correct");
-    Engine* e = engineCreate(FlowMode, 0);
+    Engine* e = createTestEngine(FlowMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -835,7 +856,7 @@ static void test_flow_backspace_retry(void) {
 
 static void test_timeout_triggers(void) {
     TEST("Timeout: triggers after configured duration");
-    Engine* e = engineCreate(StrictMode, 1);
+    Engine* e = createTestEngine(StrictMode, 1);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -869,7 +890,7 @@ static void test_timeout_triggers(void) {
 
 static void test_timeout_zero_disabled(void) {
     TEST("Timeout: zero timeout means no timeout");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -888,7 +909,7 @@ static void test_timeout_zero_disabled(void) {
 
 static void test_timeout_pause_does_not_accumulate(void) {
     TEST("Timeout: paused time does not count toward timeout");
-    Engine* e = engineCreate(StrictMode, 1);
+    Engine* e = createTestEngine(StrictMode, 1);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     engineStart(e);
@@ -918,7 +939,7 @@ static void test_timeout_pause_does_not_accumulate(void) {
 
 static void test_timeout_backspace_checks_timeout(void) {
     TEST("Timeout: backspace also triggers timeout check");
-    Engine* e = engineCreate(FlowMode, 1);
+    Engine* e = createTestEngine(FlowMode, 1);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     CallbackFlags flags;
@@ -953,7 +974,7 @@ static void test_timeout_backspace_checks_timeout(void) {
 
 static void test_auto_save_session(void) {
     TEST("Auto-save: saves session on completion");
-    Engine* e = engineCreate(FlowMode, 0);
+    Engine* e = createTestEngine(FlowMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
 
     Repository* repo = repositoryCreate("test_autosave.db");
@@ -979,15 +1000,15 @@ static void test_auto_save_session(void) {
     ASSERT(sessions[0].accuracy == 100.0, "accuracy should be 100.0");
     free(sessions);
 
-    remove("test_autosave.db");
     engineDestroy(e);
     repositoryDestroy(repo);
+    remove("test_autosave.db");
     PASS();
 }
 
 static void test_stats_before_start(void) {
     TEST("Stats: get stats before starting");
-    Engine* e = engineCreate(StrictMode, 0);
+    Engine* e = createTestEngine(StrictMode, 0);
     ASSERT(e != NULL, "engineCreate returned NULL");
     
     SessionStats stats = engineGetStats(e);
@@ -1065,6 +1086,8 @@ int main(void) {
     test_timeout_pause_does_not_accumulate();
     test_timeout_backspace_checks_timeout();
     test_auto_save_session();
+    
+    contentProviderDestroy(sharedTestContent);
     
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
            tests_passed, tests_failed, test_count);

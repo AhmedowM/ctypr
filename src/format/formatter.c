@@ -10,6 +10,7 @@ typedef struct Formatter {
     char buffer[4096];
     size_t position;
     Logger* logger;
+    const char* name;
 } Formatter;
 
 Formatter* formatterCreate(void) {
@@ -21,6 +22,7 @@ Formatter* formatterCreate(void) {
     f->buffer[0] = '\0';
     f->position = 0;
     f->logger = NULL;
+    f->name = "Formatter";
     return f;
 }
 

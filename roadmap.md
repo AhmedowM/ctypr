@@ -218,3 +218,167 @@ Add comprehensive Doxygen-style documentation matching the C++ version:
 - API documentation (⚠️ partially done — all headers have `@brief`/`@param`/`@return`)
 - CMake install/packaging
 - Doxygen generation in build
+
+---
+
+## Micro-Bugs
+
+Identified during code review (July 2026):
+
+| # | File | Issue | Severity |
+|---|------|-------|----------|
+| 1 | `engine.c:252-267` | `engineStop` does not call `autoSaveSession`. User-initiated stop silently discards session data. C++ reference auto-saves on all stop causes. | Low |
+| 2 | `engine.c:252-258` | Calling `engineStop()` on a finished/timed-out engine prints "engineStop: not running" and sets `lastError = NOT_RUNNING`, which is misleading since the engine did run previously. | Very Low |
+| 3 | `content.c:165-187` | `_cpGetFile` opens file in text mode (`"r"` not `"rb"`). On Windows this translates CRLF → LF, making byte counts differ from actual file size. | Very Low |
+| 4 | `content.c:173` | File larger than 4095 bytes is silently truncated. No warning to caller. | Low |
+| 5 | `repository.c:33-38` | `getFullPath` has dead code: checks for `"~/.typr/typr.db"` but never expands `~`. The fallback to `"typr.db"` always activates. | Very Low |
+| 6 | `formatter.c:64-72` | Sentence-boundary search picks the *first* sentence end after midpoint. With two potential boundaries close together, produces unexpectedly short chunks. Matches C++ behavior, but the result can vary by position. | Minimal |
+| 7 | `test_engine.c` (auto-save test) | `sessions[0].accuracy == 100.0` uses double `==`. FP rounding can fail on different platforms. Should use `fabs(acc - 100.0) < 0.001`. | Low |
+| 8 | `engine.c:151-166` | `checkTimeout` dereferences `self->session` without NULL check. Safe for valid engines (session always allocated), but any future code path that NULLs session would cause a crash. | Very Low |
+| 9 | `engine.c:300-306` | No `engineWasStopped()` to query the *last* stop cause independently of current state. `engineGetStateInfo` reveals it, but there's no dedicated predicate. | Minimal |
+
+---
+
+## Micro-Optimizations
+
+Identified during code review (July 2026):
+
+| # | File | Current | Optimized | Saving |
+|---|------|---------|-----------|--------|
+| 1 | `Session.incorrectKeystrokesIndices` | `uint16_t[4096]` = 8 KB per session (boolean values only) | `uint8_t[4096]` = 4 KB, or **bitset** = 512 bytes | 50-94% |
+| 2 | `clearArray()` in `engine.c` | Manual `for` loop zeroing each element | `memset(array, 0, size * sizeof(type))` | ~10× faster |
+| 3 | `timeDiffMs` freq init on Windows | `static LARGE_INTEGER freq` + branch-per-call | Pre-init in `engineCreate` or global once | Negligible |
+| 4 | `repository.c` DB handle pattern | Open → prepare → step → finalize → close on every CRUD call | Keep `sqlite3*` open in `Repository` struct; close only on `repositoryDestroy` | ~1 ms per query |
+| 5 | `engineGetStats` timestamp | Calls `localtime` + `strftime` on every stats poll | Cache timestamp; regenerate only on session boundaries | ~5-10 µs per call |
+| 6 | `snprintf("%s", src)` pattern | Used for all string copies throughout codebase | `memcpy(dst, src, len + 1)` in non-hot paths | Format-string parsing overhead |
+| 7 | `struct Session` field ordering | `size_t` + `uint32_t` + `uint16_t[4096]` creates inter-field padding | Group same-size fields; put large array first | ~6 bytes waste (negligible) |
+| 8 | `engineKeyPress_Strict` vs `_Flow` | 30+ lines of near-identical code in two functions | Single function with `bool advanceAlways` parameter | Code size, maintainability |
+| 9 | `autoSaveSession` WPM recomputation | Recomputes accuracy/WPM inline (duplicates `engineGetStats`) | Extract shared helper function | Code size, 0 runtime (one call per session end) |
+
+---
+
+## Phase 6 — Architecture Refactoring (planned)
+
+After reviewing the overall project structure, the following architectural changes were decided:
+
+### A. Logger Propagation (engine → children)
+
+**Decision:** Keep per-component `Logger*` fields and `*SetLogger()` functions for standalone use. Add auto-propagation when components are wired through the engine.
+
+**Changes:**
+- `engineSetLogger(engine, log)` internally calls:
+  - `contentProviderSetLogger(engine->contentProvider, log)` if provider is set
+  - `repositorySetLogger(engine->autoSaveRepo, log)` if repo is set
+- File/Web providers internally propagate logger to their internal formatter
+- No global singleton — user creates one Logger, sets it on the engine, engine handles distribution
+
+### B. EngineConfig Struct
+
+**Changes:**
+- Replace `engineCreate(EngineMode, uint16_t)` with `engineCreate(const EngineConfig*)`
+- Config struct:
+```c
+typedef struct EngineConfig {
+    EngineMode mode;
+    uint16_t timeout;
+    ContentProvider* contentProvider;  // required — engineCreate fails if NULL
+    Repository* autoSaveRepo;          // optional (NULL = no auto-save)
+    bool autoSaveEnabled;
+} EngineConfig;
+```
+- `engineCreate(NULL)` or `config.mode == UnknownMode` or `config.contentProvider == NULL` → returns NULL (fail)
+- Keep setter overrides for runtime changes: `engineSetMode`, `engineSetTimeout`, `engineSetAutoSave`, `engineSetContentProvider`
+- Engine does NOT own component lifetimes — caller creates and destroys all components
+
+### C. Content Provider Refactor
+
+**Decision:** Formatting is handled internally per provider type. DB provider does not use a formatter (pre-polished sentences). File/Web providers create and use a Formatter internally.
+
+**Changes:**
+- Rename `ContentDbMode` → `ContentMode`, promote to all-provider scope:
+```c
+typedef enum ContentMode {
+    CONTENT_MODE_SENTENCES,     // DB: typing_sentences table; File: lines
+    CONTENT_MODE_COMMON_WORDS,  // DB: common_words table; File: unsupported (returns empty)
+    CONTENT_MODE_RANDOM_WORDS   // DB: random_words table; File: shuffle all words
+} ContentMode;
+```
+- `contentProviderSetDbMode` → `contentProviderSetMode`
+- DB provider queries map to the correct table based on mode
+- File provider: SENTENCES = split lines, RANDOM_WORDS = shuffle all words in file
+- File provider creates `Formatter` internally for SENTENCES mode to chunk large files
+- String provider: unchanged (testing fallback)
+- Web provider: unchanged (falls back to string, future work)
+
+### D. Component Name Field
+
+**Decision:** Each public struct gets a `const char* name` field set internally by factory functions.
+
+**Names:**
+| Struct | Factory | `name` value |
+|--------|---------|-------------|
+| `Engine` | `engineCreate` | `"Engine"` |
+| `ContentProvider` (string) | `contentProviderFromString` | `"StringProvider"` |
+| `ContentProvider` (file) | `contentProviderFromFile` | `"FileProvider"` |
+| `ContentProvider` (DB) | `contentProviderFromDatabase` | `"DbProvider"` |
+| `ContentProvider` (web) | `contentProviderFromWeb` | `"WebProvider"` |
+| `Formatter` | `formatterCreate` | `"Formatter"` |
+| `Repository` | `repositoryCreate` | `"Repository"` |
+
+- All log calls within a component use `loggerLog(self->name, level, msg)`
+- No change to the `loggerLog` signature — it still takes an explicit `Logger*`
+- The component name adds context to diagnostic output
+
+### E. Engine Uses ContentProvider for Text
+
+**Changes:**
+- `engineStart` calls `contentProviderGetNext(self->contentProvider)` to get session text
+- Removes hardcoded `"The quick brown fox jumps over the lazy dog."` from `engine.c`
+- If content provider is NULL or returns empty content, `engineStart` fails with `ENGINE_ERROR_CONTENT` (new error code)
+- `EngineConfig.contentProvider` must be non-NULL or `engineCreate` returns NULL
+
+### F. Error Hierarchy Expansion
+
+**Changes:**
+- Add `ENGINE_ERROR_CONTENT` to `error.h` — for missing/empty content provider
+- Add `ENGINE_ERROR_CONFIG` — for invalid config passed to `engineCreate`
+
+### G. Test Updates
+
+- All `engineCreate(mode, timeout)` calls → `engineCreate(&(EngineConfig){.mode=..., .timeout=..., .contentProvider=...})`
+- All `*SetLogger()` calls remain for standalone component tests
+- Engine integration tests call `engineSetLogger()` once, logger propagates automatically to provider/repo
+
+---
+
+## Implementation Priority (Updated)
+
+### ✅ Phase 1 — Core Bug Fixes (completed)
+
+### ✅ Phase 2 — Build & Test Infrastructure (completed)
+
+### ✅ Phase 3 — Feature Parity (completed)
+
+### Phase 4 — Polish & Quality
+- Error hierarchy expansion
+- Test access macros
+- NULL-check consistency
+- Memory optimization
+- Continuous integration
+- Engine struct visibility
+
+### Phase 5 — Documentation & Publishing
+- API documentation (⚠️ partially done — all headers have `@brief`/`@param`/`@return`)
+- CMake install/packaging
+- Doxygen generation in build
+
+### Phase 6 — Architecture Refactoring
+- EngineConfig struct replacing raw mode/timeout parameters
+- ContentProvider required at engine creation (engineStart reads text from it)
+- ContentMode promoted to all providers (SENTENCES, COMMON_WORDS, RANDOM_WORDS)
+- File provider: SENTENCES and RANDOM_WORDS modes with internal formatter
+- Logger propagation from engine to children (provider, repo)
+- Component name field for contextual log messages
+- ENGINE_ERROR_CONTENT and ENGINE_ERROR_CONFIG error codes
+- Fix micro-bugs #1 (auto-save on stop), #4 (file truncation warning), #7 (FP comparison)
+- Implement micro-optimizations #1 (incorrectKeystrokesIndices bitset), #2 (memset), #4 (persistent DB handle)

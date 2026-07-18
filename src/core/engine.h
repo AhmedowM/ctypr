@@ -7,6 +7,7 @@
 typedef struct Engine Engine;
 typedef struct Logger Logger;
 typedef struct Repository Repository;
+typedef struct ContentProvider ContentProvider;
 
 /// @brief Typing modes that control how keystrokes are processed.
 typedef enum EngineMode {
@@ -15,13 +16,22 @@ typedef enum EngineMode {
     UnknownMode  ///< Sentinel for uninitialized or invalid mode
 } EngineMode;
 
+/// @brief Configuration for creating an Engine instance.
+typedef struct EngineConfig {
+    EngineMode mode;                   ///< Required: typing mode (StrictMode or FlowMode)
+    uint16_t timeout;                  ///< Session timeout in seconds (0 = no limit)
+    ContentProvider* contentProvider;  ///< Required: content provider for session text
+    Repository* autoSaveRepo;          ///< Optional: repository for auto-save (NULL to disable)
+    bool autoSaveEnabled;              ///< Whether auto-save is enabled (ignored if repo is NULL)
+} EngineConfig;
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-/// @brief Create a new Engine instance.
-/// @param mode    Desired typing mode (StrictMode or FlowMode).
-/// @param timeout Maximum session duration in seconds (0 = no limit).
-/// @return A pointer to the newly created Engine, or NULL on allocation failure.
-Engine* engineCreate(EngineMode mode, uint16_t timeout);
+/// @brief Create a new Engine instance with the given configuration.
+/// @param config Engine configuration (must not be NULL; mode must be valid;
+///               contentProvider must not be NULL).
+/// @return A pointer to the newly created Engine, or NULL on failure.
+Engine* engineCreate(const EngineConfig* config);
 
 /// @brief Destroy an Engine instance and free all associated resources.
 /// @param self The Engine instance to destroy (NULL is safe).
@@ -30,13 +40,21 @@ void engineDestroy(Engine* self);
 // ── Logger ───────────────────────────────────────────────────────────────────
 
 /// @brief Attach a Logger to the engine for diagnostic output.
+///        Propagates to child components (content provider, repository).
 /// @param self   The Engine instance.
 /// @param logger The Logger instance to attach (NULL to detach).
 void engineSetLogger(Engine* self, Logger* logger);
 
+// ── Content Provider ─────────────────────────────────────────────────────────
+
+/// @brief Set or replace the content provider used for session text.
+/// @param self     The Engine instance.
+/// @param provider The ContentProvider to use (NULL is safe, but engineStart will fail).
+void engineSetContentProvider(Engine* self, ContentProvider* provider);
+
 // ── Auto-Save ────────────────────────────────────────────────────────────────
 
-/// @brief Enable or disable automatic session persistence on completion/timeout.
+/// @brief Enable or disable automatic session persistence on completion/timeout/stop.
 /// @param self    The Engine instance.
 /// @param repo    The Repository to save into (can be NULL to clear).
 /// @param enabled Whether auto-save is enabled.
