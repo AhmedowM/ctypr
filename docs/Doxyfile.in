@@ -1,0 +1,11 @@
+PROJECT_NAME           = "ctypr"
+PROJECT_VERSION         = @PROJECT_VERSION@
+PROJECT_BRIEF          = "C typing practice library"
+USE_MDFILE_AS_MAINPAGE = @PROJECT_SOURCE_DIR@/docs/index.md
+RECURSIVE              = YES
+SOURCE_BROWSER         = YES
+OPTIMIZE_OUTPUT_FOR_C  = YES
+EXTRACT_STATIC         = NO
+EXTRACT_PRIVATE        = NO
+MACRO_EXPANSION        = YES
+HTML_OUTPUT            = html

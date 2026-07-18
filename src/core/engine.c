@@ -297,6 +297,10 @@ void engineStart(Engine *self) {
 void engineStop(Engine *self) {
     if (self) {
         if (self->state != ENGINE_RUNNING) {
+            if (self->stopCause == ENGINE_STOP_CAUSE_FINISHED ||
+                self->stopCause == ENGINE_STOP_CAUSE_TIMEOUT) {
+                return;
+            }
             self->lastError = ENGINE_ERROR_NOT_RUNNING;
             if (self->logger) loggerLog(self->logger, LOG_LEVEL_WARNING, "engineStop: not running");
             return;
@@ -530,6 +534,7 @@ void engineClearEvent(Engine* engine, EngineEvent event) {
 // error.h
 
 void engineErrorToString(EngineError error, char* buffer, size_t bufferSize) {
+    if (!buffer) return;
     const char* errorString = "Unknown Error";
     switch (error) {
         case ENGINE_ERROR_NONE: errorString = "No Error"; break;
@@ -550,6 +555,7 @@ void engineErrorToString(EngineError error, char* buffer, size_t bufferSize) {
 // event.h
 
 void engineEventToString(EngineEvent event, char* buffer, size_t bufferSize) {
+    if (!buffer) return;
     const char* eventString = "Unknown Event";
     switch (event) {
         case ENGINE_EVENT_NONE: eventString = "No Event"; break;

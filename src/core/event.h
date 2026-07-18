@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Engine Engine;
 
 /// @brief Engine events that can trigger registered callbacks.
@@ -32,5 +36,9 @@ typedef void (*EngineCallback)(Engine* engine, void* userData);
 /// @param buffer     Output buffer for the string.
 /// @param bufferSize Size of the output buffer.
 void engineEventToString(EngineEvent event, char* buffer, size_t bufferSize);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -3,6 +3,10 @@
 
 typedef struct Engine Engine;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// @brief Engine operational states.
 typedef enum EngineState {
     ENGINE_IDLE,    ///< Engine is idle (not running, paused, or in error)
@@ -32,5 +36,9 @@ typedef struct EngineStateInfo {
 /// @return An EngineStateInfo struct with the current state and stop cause.
 ///         Returns ENGINE_ERROR / ENGINE_STOP_CAUSE_ERROR if engine is NULL.
 EngineStateInfo engineGetStateInfo(Engine* engine);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // STATE_H

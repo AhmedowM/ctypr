@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// @brief Engine error codes.
 typedef enum EngineError {
     ENGINE_ERROR_NONE,            ///< No error
@@ -23,5 +27,9 @@ typedef enum EngineError {
 /// @param buffer     Output buffer for the string.
 /// @param bufferSize Size of the output buffer.
 void engineErrorToString(EngineError error, char* buffer, size_t bufferSize);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // ERROR_H

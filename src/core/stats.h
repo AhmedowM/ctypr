@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Engine Engine;
 
 /// @brief Session statistics populated by engineGetStats.
@@ -22,5 +26,9 @@ typedef struct {
 /// @return A SessionStats struct with the current statistics.
 ///         Returns a zeroed struct if engine is NULL.
 SessionStats engineGetStats(Engine* engine);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // STATS_H

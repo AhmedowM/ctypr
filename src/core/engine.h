@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Engine Engine;
 typedef struct Logger Logger;
 typedef struct Repository Repository;
@@ -158,5 +162,9 @@ void engineKeyPress(Engine* self, char key);
 /// @brief Process a backspace press (flow mode only; no-op in strict mode).
 /// @param self The Engine instance.
 void engineBackspacePress(Engine* self);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // ENGINE_H

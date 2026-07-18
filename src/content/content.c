@@ -34,6 +34,7 @@ typedef struct ContentProvider {
 } ContentProvider;
 
 ContentProvider* contentProviderFromString(const char* text) {
+    if (!text) return NULL;
     ContentProvider* cp = malloc(sizeof(ContentProvider));
     if (!cp) {
         fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (string)\n");
@@ -54,6 +55,7 @@ ContentProvider* contentProviderFromString(const char* text) {
 }
 
 ContentProvider* contentProviderFromFile(const char* filepath) {
+    if (!filepath) return NULL;
     ContentProvider* cp = malloc(sizeof(ContentProvider));
     if (!cp) {
         fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (file)\n");
@@ -80,6 +82,7 @@ ContentProvider* contentProviderFromFile(const char* filepath) {
 }
 
 ContentProvider* contentProviderFromDatabase(const char* filepath) {
+    if (!filepath) return NULL;
     ContentProvider* cp = malloc(sizeof(ContentProvider));
     if (!cp) {
         fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (database)\n");
@@ -106,6 +109,7 @@ ContentProvider* contentProviderFromDatabase(const char* filepath) {
 }
 
 ContentProvider* contentProviderFromWeb(const char* url) {
+    if (!url) return NULL;
     ContentProvider* cp = malloc(sizeof(ContentProvider));
     if (!cp) {
         fprintf(stderr, "[ERROR] Failed to allocate ContentProvider (web)\n");

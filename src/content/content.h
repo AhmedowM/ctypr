@@ -6,6 +6,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct ContentProvider ContentProvider;
 typedef struct Logger Logger;
 
@@ -85,5 +89,9 @@ void contentProviderReset(ContentProvider* provider);
 /// @param provider The ContentProvider instance.
 /// @return true if all content has been consumed or provider is NULL.
 bool contentProviderIsExhausted(ContentProvider* provider);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // CONTENT_H

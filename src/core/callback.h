@@ -6,6 +6,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Engine Engine;
 
 /// @brief Register a callback for the ENGINE_EVENT_STARTED event.
@@ -95,5 +99,9 @@ void engineDisconnect(Engine* engine, EngineEvent event, int slotId);
 /// @param engine The Engine instance.
 /// @param event  The event type to clear.
 void engineClearEvent(Engine* engine, EngineEvent event);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

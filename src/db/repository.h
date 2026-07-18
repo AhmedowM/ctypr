@@ -6,6 +6,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Repository Repository;
 typedef struct Logger Logger;
 
@@ -98,5 +102,9 @@ SessionData repositoryGetBestRawWpm(Repository* repo);
 /// @param repo The Repository instance.
 /// @return The average WPM, or 0.0 if no sessions exist.
 double repositoryGetAverageWpm(Repository* repo);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // REPOSITORY_H

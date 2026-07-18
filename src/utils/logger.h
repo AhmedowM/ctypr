@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// @brief Maximum number of log files that can be added simultaneously.
 #define LOGGER_MAX_FILES 4
 
@@ -55,5 +59,9 @@ bool loggerAddFile(Logger* logger, const char* filepath);
 /// @param level   The severity level of the message.
 /// @param message The message string to log.
 void loggerLog(Logger* logger, LogLevel level, const char* message);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // LOGGER_H

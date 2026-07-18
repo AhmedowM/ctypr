@@ -129,6 +129,20 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+# ---- Documentation ----
+
+option(BUILD_DOCS "Build Doxygen HTML documentation" OFF)
+if(BUILD_DOCS)
+    find_package(Doxygen REQUIRED)
+    doxygen_add_docs(docs
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/docs
+        COMMENT "Generate HTML API documentation"
+        CONFIG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.in
+        ALL
+    )
+endif()
+
 # ---- Installation ----
 
 # Set install directories
