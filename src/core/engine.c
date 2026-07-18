@@ -6,6 +6,7 @@
 #include "stats.h"
 #include "logger.h"
 #include "signal_internal.h"
+#include "../db/repository.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -89,12 +90,52 @@ typedef struct Engine {
     Session* session;
     SessionStats stats;
     Logger* logger;
+    Repository* autoSaveRepo;
+    bool autoSaveEnabled;
 } Engine;
+
+static const char* modeToString(EngineMode mode) {
+    switch (mode) {
+        case StrictMode: return "strict";
+        case FlowMode:   return "flow";
+        default:         return "unknown";
+    }
+}
+
+static void autoSaveSession(Engine* self) {
+    if (!self->autoSaveEnabled || !self->autoSaveRepo) return;
+    SessionData data;
+    memset(&data, 0, sizeof(data));
+    snprintf(data.mode, sizeof(data.mode), "%s", modeToString(self->mode));
+    data.totalChars   = self->stats.totalKeystrokes;
+    data.correctChars = self->stats.correctKeystrokes;
+    data.durationMs   = self->session->accumulatedTimeMs;
+    double minutes = (double)data.durationMs / 60000.0;
+    if (self->stats.totalKeystrokes > 0) {
+        data.accuracy = (double)self->stats.correctKeystrokes / self->stats.totalKeystrokes * 100.0;
+    } else {
+        data.accuracy = 100.0;
+    }
+    if (minutes > 0) {
+        data.wpmRaw = (double)self->session->currentIndex / 5.0 / minutes;
+        data.wpm = data.wpmRaw * (data.accuracy / 100.0);
+    }
+    time_t now = time(NULL);
+    struct tm* tm_info = localtime(&now);
+    strftime(data.timestamp, sizeof(data.timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
+    int64_t id = repositorySaveSession(self->autoSaveRepo, &data);
+    if (self->logger && id >= 0) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Session auto-saved with ID: %lld", (long long)id);
+        loggerLog(self->logger, LOG_LEVEL_INFO, buf);
+    }
+}
 
 static void completeSession(Engine* self) {
     self->state = ENGINE_IDLE;
     self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
     if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session completed");
+    autoSaveSession(self);
     signalEmit(&self->onFinished, self);
     signalEmit(&self->onStopped, self);
 }
@@ -116,6 +157,7 @@ static bool checkTimeout(Engine* self) {
         self->state = ENGINE_IDLE;
         self->stopCause = ENGINE_STOP_CAUSE_TIMEOUT;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_WARNING, "Session timed out");
+        autoSaveSession(self);
         signalEmit(&self->onTimeout, self);
         signalEmit(&self->onStopped, self);
         return true;
@@ -157,6 +199,13 @@ void engineDestroy(Engine *self) {
 
 void engineSetLogger(Engine* self, Logger* logger) {
     if (self) self->logger = logger;
+}
+
+void engineSetAutoSave(Engine* self, Repository* repo, bool enabled) {
+    if (self) {
+        self->autoSaveRepo = repo;
+        self->autoSaveEnabled = enabled;
+    }
 }
 
 void engineSetMode(Engine *self, EngineMode mode) {
@@ -287,6 +336,7 @@ void engineKeyPress_Strict(Engine *self, char key) {
         tryCompleteSession(self);
     } else {
         self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
+        self->stats.incorrectKeystrokes++;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Strict: incorrect key");
         signalEmit(&self->onIncorrectKeystroke, self);
     }
@@ -305,6 +355,7 @@ void engineKeyPress_Flow(Engine *self, char key) {
         signalEmit(&self->onCorrectKeystroke, self);
     } else {
         self->session->incorrectKeystrokesIndices[self->session->currentIndex] = 1;
+        self->stats.incorrectKeystrokes++;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: incorrect key");
         signalEmit(&self->onIncorrectKeystroke, self);
     }
@@ -510,6 +561,7 @@ SessionStats engineGetStats(Engine* engine) {
     }
     stats.totalKeystrokes = engine->stats.totalKeystrokes;
     stats.correctKeystrokes = engine->stats.correctKeystrokes;
+    stats.incorrectKeystrokes = engine->stats.incorrectKeystrokes;
     stats.durationMs = engine->session->accumulatedTimeMs;
     if (engine->stats.totalKeystrokes > 0) {
         stats.accuracy = (double)engine->stats.correctKeystrokes / engine->stats.totalKeystrokes * 100.0;

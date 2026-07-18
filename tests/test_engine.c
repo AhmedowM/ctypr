@@ -4,6 +4,7 @@
 #include "event.h"
 #include "state.h"
 #include "stats.h"
+#include "repository.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -560,6 +561,7 @@ static void test_null_safety(void) {
     engineOnBackspace(NULL, NULL, NULL);
     engineDisconnect(NULL, ENGINE_EVENT_STARTED, 0);
     engineClearEvent(NULL, ENGINE_EVENT_STARTED);
+    engineSetAutoSave(NULL, NULL, false);
     
     PASS();
 }
@@ -949,6 +951,40 @@ static void test_timeout_backspace_checks_timeout(void) {
     PASS();
 }
 
+static void test_auto_save_session(void) {
+    TEST("Auto-save: saves session on completion");
+    Engine* e = engineCreate(FlowMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    Repository* repo = repositoryCreate("test_autosave.db");
+    ASSERT(repo != NULL, "repositoryCreate returned NULL");
+
+    engineSetAutoSave(e, repo, true);
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+
+    const char* text = "The quick brown fox jumps over the lazy dog.";
+    for (const char* p = text; *p; p++) {
+        engineKeyPress(e, *p);
+    }
+
+    ASSERT(engineIsCompleted(e), "should be completed");
+
+    size_t count = 0;
+    SessionData* sessions = repositoryGetAll(repo, &count);
+    ASSERT(count == 1, "should have 1 saved session");
+    ASSERT(sessions != NULL, "sessions should not be NULL");
+    ASSERT(sessions[0].totalChars == 44, "totalChars should be 44");
+    ASSERT(sessions[0].correctChars == 44, "correctChars should be 44");
+    ASSERT(sessions[0].accuracy == 100.0, "accuracy should be 100.0");
+    free(sessions);
+
+    remove("test_autosave.db");
+    engineDestroy(e);
+    repositoryDestroy(repo);
+    PASS();
+}
+
 static void test_stats_before_start(void) {
     TEST("Stats: get stats before starting");
     Engine* e = engineCreate(StrictMode, 0);
@@ -1028,6 +1064,7 @@ int main(void) {
     test_timeout_zero_disabled();
     test_timeout_pause_does_not_accumulate();
     test_timeout_backspace_checks_timeout();
+    test_auto_save_session();
     
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
            tests_passed, tests_failed, test_count);

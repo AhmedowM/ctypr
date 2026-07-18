@@ -6,6 +6,7 @@
 
 typedef struct Engine Engine;
 typedef struct Logger Logger;
+typedef struct Repository Repository;
 
 /// @brief Typing modes that control how keystrokes are processed.
 typedef enum EngineMode {
@@ -32,6 +33,14 @@ void engineDestroy(Engine* self);
 /// @param self   The Engine instance.
 /// @param logger The Logger instance to attach (NULL to detach).
 void engineSetLogger(Engine* self, Logger* logger);
+
+// ── Auto-Save ────────────────────────────────────────────────────────────────
+
+/// @brief Enable or disable automatic session persistence on completion/timeout.
+/// @param self    The Engine instance.
+/// @param repo    The Repository to save into (can be NULL to clear).
+/// @param enabled Whether auto-save is enabled.
+void engineSetAutoSave(Engine* self, Repository* repo, bool enabled);
 
 // ── Mode ─────────────────────────────────────────────────────────────────────
 

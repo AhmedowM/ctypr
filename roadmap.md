@@ -14,23 +14,23 @@ The table below shows which features from the C++ version exist in the C port, w
 
 | Feature | C++ Status | C Status | Notes |
 |---------|-----------|----------|-------|
-| Session state machine | ✅ Complete | ⚠️ Partial | Missing `ChunkFinished`, `Timeout`, `Completed` states |
+| Session state machine | ✅ Complete | ⚠️ Partial | Missing `ChunkFinished` state |
 | Strict & Flow modes | ✅ Complete | ✅ Implemented | |
-| WPM / accuracy stats | ✅ Complete | ⚠️ Partial | Duration in seconds (C++ uses ms), no incorrect counter |
-| Timeout handling | ✅ Complete | ❌ Missing | |
+| WPM / accuracy stats | ✅ Complete | ✅ Implemented | Includes explicit incorrectKeystrokes counter |
+| Timeout handling | ✅ Complete | ✅ Implemented | |
 | Content chunking | ✅ Complete | ✅ Implemented | |
 | String content provider | ✅ Complete | ✅ Implemented | |
 | File content provider | ✅ Complete | ✅ Implemented | |
 | Database content provider | ✅ Complete | ✅ Implemented | |
 | SQLite persistence | ✅ Complete | ✅ Implemented | |
 | Exception hierarchy | ✅ Complete | ❌ Missing | |
-| Signal/callback system | ✅ Complete | ⚠️ Partial | Per-event callbacks with EngineEvent* parameter, no disconnect |
+| Signal/callback system | ✅ Complete | ✅ Implemented | Per-event registration functions, disconnect, clear |
 | Logger | ✅ Complete | ✅ Implemented | |
 | Session data struct | ✅ Complete | ✅ Implemented | |
-| Auto-save | ✅ Complete | ❌ Missing | |
+| Auto-save | ✅ Complete | ✅ Implemented | |
 | CMake build system | ✅ Complete | ✅ Implemented | |
 | CMake install/packaging | ✅ Complete | ❌ Missing | |
-| Test suite (72 tests) | ✅ Complete | ✅ Implemented | |
+| Test suite (90 tests) | ✅ Complete | ✅ Implemented | |
 | Pimpl pattern | ✅ Complete | ⚠️ Partial | Engine struct in .c but no full Pimpl |
 | Doxygen documentation | ✅ Complete | ❌ Missing | |
 
@@ -73,13 +73,13 @@ The following 10 bugs were identified and fixed in the initial bug-fix pass:
 
 **Improvement:** Consider exposing the struct definition (or a forward-compatible version) in the header so users can optionally stack-allocate engines for performance-sensitive applications.
 
-### 6. Missing timeout implementation
+### 6. Missing timeout implementation ✅ Completed
 
-**Location:** `src/core/engine.h` and `src/core/engine.c`
+**Location:** `src/core/engine.c`
 
-**Problem:** The engine has a `timeout` field that can be set and retrieved, but the timeout is never checked during execution. Sessions will never automatically stop due to timeout. The C++ version fully implements timeout with `ENGINE_EVENT_TIMEOUT` and a `Timeout` state.
+**Problem:** The engine has a `timeout` field that can be set and retrieved, but the timeout was never checked during execution. Sessions would never automatically stop due to timeout.
 
-**Improvement:** Implement timeout checking in `engineKeyPress` (or a polling mechanism), emitting `ENGINE_EVENT_TIMEOUT` when the session exceeds the configured duration. Add `ENGINE_STOP_CAUSE_TIMEOUT` handling.
+**Solution:** Added `checkTimeout()` called at the start of `engineKeyPress_Strict`, `engineKeyPress_Flow`, and `engineBackspacePress_Flow`. Emits `ENGINE_EVENT_TIMEOUT` and transitions to `ENGINE_STOP_CAUSE_TIMEOUT`. Paused time is excluded from accumulation.
 
 ### 7. No incorrect keystrokes counter in SessionStats
 
@@ -91,13 +91,13 @@ The following 10 bugs were identified and fixed in the initial bug-fix pass:
 
 ### 8. Missing `#include "event.h"` in callback.h ✅ Completed
 
-### 9. NULL-pointer safety inconsistencies
+### 9. NULL-pointer safety inconsistencies ⚠️ Partial progress
 
 **Location:** Various functions in `engine.c`
 
-**Problem:** Some functions check for NULL `self`, some don't. For example, `engineSetMode` checks for NULL but `engineDestroy` also checks. The pattern is inconsistent.
+**Problem:** Some functions check for NULL `self`, some don't. The pattern is inconsistent.
 
-**Improvement:** Standardize NULL checking — either validate in all functions or accept crashes on NULL as a precondition violation with a clear contract.
+**Improvement:** Signal registration functions added in the refactor all check for NULL `engine`. The lifecycle and state query functions already check. A full audit of all 50+ functions is still pending.
 
 ### 10. Use of `strcpy`, `sprintf`, and raw buffers
 
@@ -121,16 +121,9 @@ The following 10 bugs were identified and fixed in the initial bug-fix pass:
 
 ### 4. Implement SQLite persistence ✅ Completed
 
-### 5. Implement type-safe callback/signal system
+### 5. Implement type-safe callback/signal system ✅ Completed
 
-Port the C++ version's Signal class:
-- Per-event callback lists (one list per event type) instead of iterating all callbacks
-- `connect(Slot)` with disconnect token support
-- `connectSimple(Slot)` without disconnect
-- `emit(Args...)` to fire all connected slots
-- `disconnect(token)` to remove specific connections
-- `compact()` to clean up expired token slots
-- `clear()` to remove all connections
+Each event type owns an opaque `Signal` embedded in the `Engine` struct. Per-event registration functions (`engineOnStarted`, etc.) connect callbacks. Supports disconnect by slot index, clear per event, and 5 simultaneous slots per event type.
 
 ### 6. Implement exception/error hierarchy
 
@@ -203,21 +196,25 @@ Add comprehensive Doxygen-style documentation matching the C++ version:
 - Add test suite
 - Empty feature directories populated
 
-### ✅ Phase 3 — Feature Parity (partially completed)
+### ✅ Phase 3 — Feature Parity (completed)
 - Implement content provider system ✅
 - Implement content chunking/formatters ✅
 - Implement SQLite persistence ✅
 - Implement logger ✅
-- Implement timeout handling ❌
-- Implement type-safe signal system ❌
-- Implement auto-save ❌
+- Implement timeout handling ✅
+- Implement type-safe signal system ✅
+- Implement auto-save ✅
+- Implement example usage ✅
 
 ### Phase 4 — Polish & Quality
 - Error hierarchy expansion
 - Test access macros
-- Incorrect keystrokes counter
 - NULL-check consistency
 - Memory optimization
-- API documentation
 - Continuous integration
 - Engine struct visibility
+
+### Phase 5 — Documentation & Publishing
+- API documentation (⚠️ partially done — all headers have `@brief`/`@param`/`@return`)
+- CMake install/packaging
+- Doxygen generation in build
