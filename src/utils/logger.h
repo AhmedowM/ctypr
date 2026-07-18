@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
 
 /// @brief Maximum number of log files that can be added simultaneously.
 #define LOGGER_MAX_FILES 4

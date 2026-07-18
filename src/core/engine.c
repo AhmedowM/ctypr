@@ -7,7 +7,7 @@
 #include "logger.h"
 #include "signal_internal.h"
 #include "content.h"
-#include "../db/repository.h"
+#include "repository.h"
 
 #include <stdint.h>
 #include <stdio.h>

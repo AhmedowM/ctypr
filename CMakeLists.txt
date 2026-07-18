@@ -109,7 +109,7 @@ endif()
 
 # ---- Tests ----
 
-if(BUILD_TESTING OR NOT DEFINED BUILD_TESTING)
+if(BUILD_TESTING)
     enable_testing()
     
     # Add a custom target for running tests with output
@@ -124,7 +124,7 @@ endif()
 
 # ---- Examples ----
 
-option(BUILD_EXAMPLES "Build example programs" ON)
+option(BUILD_EXAMPLES "Build example programs" OFF)
 if(BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
@@ -132,7 +132,7 @@ endif()
 # ---- Installation ----
 
 # Set install directories
-set(CMAKE_INSTALL_INCLUDEDIR "include/ctypr")
+set(CMAKE_INSTALL_INCLUDEDIR "include")
 
 # Install the library (include sqlite3 in export set, matching C++ approach)
 install(TARGETS ctypr sqlite3
@@ -142,19 +142,26 @@ install(TARGETS ctypr sqlite3
     RUNTIME DESTINATION bin
 )
 
-# Install headers
+# Install headers into include/ctypr/ subdirectory (exclude internal + umbrella)
 install(DIRECTORY
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/
     ${CMAKE_CURRENT_SOURCE_DIR}/src/content/
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/format/
     ${CMAKE_CURRENT_SOURCE_DIR}/src/db/
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctypr
     FILES_MATCHING PATTERN "*.h"
+    PATTERN "*_internal.h" EXCLUDE
+    PATTERN "signal.h" EXCLUDE
+    PATTERN "ctypr.h" EXCLUDE
 )
 
 # Install generated version header
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctypr
+)
+
+# Install umbrella header directly under include/
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/core/ctypr.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
@@ -191,7 +198,8 @@ set(CPACK_PACKAGE_NAME "ctypr")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "C typing practice library")
 set(CPACK_PACKAGE_VENDOR "ctypr")
-set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}")
+string(TOLOWER "${CMAKE_SYSTEM_NAME}" CPACK_SYSTEM_NAME)
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME}")
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_GENERATOR "TGZ;ZIP")
 

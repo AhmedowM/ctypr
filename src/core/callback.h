@@ -2,7 +2,6 @@
 #define CALLBACK_H
 
 #include "event.h"
-#include "signal.h"
 
 #include <stdbool.h>
 #include <stdint.h>
