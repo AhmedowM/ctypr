@@ -1,8 +1,11 @@
 PROJECT_NAME           = "ctypr"
-PROJECT_VERSION         = @PROJECT_VERSION@
+PROJECT_NUMBER         = @PROJECT_VERSION@
 PROJECT_BRIEF          = "C typing practice library"
-USE_MDFILE_AS_MAINPAGE = @PROJECT_SOURCE_DIR@/docs/index.md
+OUTPUT_DIRECTORY        = @CMAKE_CURRENT_BINARY_DIR@/docs
+INPUT                  = @PROJECT_SOURCE_DIR@/src @PROJECT_SOURCE_DIR@/docs
+FILE_PATTERNS          = *.h *.c *.md
 RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = @PROJECT_SOURCE_DIR@/docs/index.md
 SOURCE_BROWSER         = YES
 OPTIMIZE_OUTPUT_FOR_C  = YES
 EXTRACT_STATIC         = NO

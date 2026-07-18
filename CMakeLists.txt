@@ -134,12 +134,16 @@ endif()
 option(BUILD_DOCS "Build Doxygen HTML documentation" OFF)
 if(BUILD_DOCS)
     find_package(Doxygen REQUIRED)
-    doxygen_add_docs(docs
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/docs
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.in
+        ${CMAKE_CURRENT_BINARY_DIR}/docs/Doxyfile
+        @ONLY
+    )
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/docs)
+    add_custom_target(docs ALL
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/docs/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMENT "Generate HTML API documentation"
-        CONFIG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.in
-        ALL
     )
 endif()
 
