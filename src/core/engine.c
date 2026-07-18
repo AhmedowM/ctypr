@@ -33,6 +33,7 @@ typedef struct Session {
     ctypr_time_t segmentEndTime;
     int64_t accumulatedTimeMs;
     bool isTimingStarted;
+    char cachedTimestamp[20];
 } Session;
 
 static void getCurrentTime(ctypr_time_t* t) {
@@ -97,6 +98,28 @@ static const char* modeToString(EngineMode mode) {
     }
 }
 
+static void cacheTimestamp(char* buf, size_t size) {
+    time_t now = time(NULL);
+    struct tm* tm_info = localtime(&now);
+    strftime(buf, size, "%Y-%m-%d %H:%M:%S", tm_info);
+}
+
+static void computeSessionStats(SessionStats* stats, uint32_t correctChars, uint32_t totalChars, uint32_t currentIndex, int64_t durationMs) {
+    if (totalChars > 0) {
+        stats->accuracy = (double)correctChars / totalChars * 100.0;
+    } else {
+        stats->accuracy = 100.0;
+    }
+    double minutes = (double)durationMs / 60000.0;
+    if (minutes > 0) {
+        stats->wpmRaw = (double)currentIndex / 5.0 / minutes;
+        stats->wpm = stats->wpmRaw * (stats->accuracy / 100.0);
+    } else {
+        stats->wpmRaw = 0.0;
+        stats->wpm = 0.0;
+    }
+}
+
 static void autoSaveSession(Engine* self) {
     if (!self->autoSaveEnabled || !self->autoSaveRepo) return;
     SessionData data;
@@ -105,19 +128,14 @@ static void autoSaveSession(Engine* self) {
     data.totalChars   = self->stats.totalKeystrokes;
     data.correctChars = self->stats.correctKeystrokes;
     data.durationMs   = self->session->accumulatedTimeMs;
-    double minutes = (double)data.durationMs / 60000.0;
-    if (self->stats.totalKeystrokes > 0) {
-        data.accuracy = (double)self->stats.correctKeystrokes / self->stats.totalKeystrokes * 100.0;
-    } else {
-        data.accuracy = 100.0;
+    {
+        SessionStats tmp;
+        computeSessionStats(&tmp, self->stats.correctKeystrokes, self->stats.totalKeystrokes, self->session->currentIndex, data.durationMs);
+        data.accuracy = tmp.accuracy;
+        data.wpm = tmp.wpm;
+        data.wpmRaw = tmp.wpmRaw;
     }
-    if (minutes > 0) {
-        data.wpmRaw = (double)self->session->currentIndex / 5.0 / minutes;
-        data.wpm = data.wpmRaw * (data.accuracy / 100.0);
-    }
-    time_t now = time(NULL);
-    struct tm* tm_info = localtime(&now);
-    strftime(data.timestamp, sizeof(data.timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
+    memcpy(data.timestamp, self->session->cachedTimestamp, sizeof(data.timestamp));
     int64_t id = repositorySaveSession(self->autoSaveRepo, &data);
     if (self->logger && id >= 0) {
         char buf[64];
@@ -130,6 +148,7 @@ static void completeSession(Engine* self) {
     self->state = ENGINE_IDLE;
     self->stopCause = ENGINE_STOP_CAUSE_FINISHED;
     if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session completed");
+    cacheTimestamp(self->session->cachedTimestamp, sizeof(self->session->cachedTimestamp));
     autoSaveSession(self);
     signalEmit(&self->onFinished, self);
     signalEmit(&self->onStopped, self);
@@ -144,13 +163,14 @@ static bool tryCompleteSession(Engine* self) {
 }
 
 static bool checkTimeout(Engine* self) {
-    if (!self || self->timeout == 0) return false;
+    if (!self || self->timeout == 0 || !self->session) return false;
     if (self->state == ENGINE_RUNNING) {
         updateTime(self->session);
     }
     if (self->session->accumulatedTimeMs >= (int64_t)self->timeout * 1000) {
         self->state = ENGINE_IDLE;
         self->stopCause = ENGINE_STOP_CAUSE_TIMEOUT;
+        cacheTimestamp(self->session->cachedTimestamp, sizeof(self->session->cachedTimestamp));
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_WARNING, "Session timed out");
         autoSaveSession(self);
         signalEmit(&self->onTimeout, self);
@@ -269,6 +289,7 @@ void engineStart(Engine *self) {
         self->session->isTimingStarted = true;
         self->session->accumulatedTimeMs = 0;
         memset(self->session->incorrectKeystrokesBitmap, 0, sizeof(self->session->incorrectKeystrokesBitmap));
+        cacheTimestamp(self->session->cachedTimestamp, sizeof(self->session->cachedTimestamp));
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session started");
         signalEmit(&self->onStarted, self);
     }
@@ -286,6 +307,7 @@ void engineStop(Engine *self) {
         self->stopCause = ENGINE_STOP_CAUSE_USER;
         updateTime(self->session);
         self->session->isTimingStarted = false;
+        cacheTimestamp(self->session->cachedTimestamp, sizeof(self->session->cachedTimestamp));
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session stopped by user");
         autoSaveSession(self);
         signalEmit(&self->onStopped, self);
@@ -330,6 +352,7 @@ bool engineIsError(Engine* self)     { return self && self->state == ENGINE_ERRO
 bool engineIsCompleted(Engine* self) { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_FINISHED; }
 bool engineIsTimedOut(Engine* self)  { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_TIMEOUT; }
 bool engineIsStopped(Engine* self)   { return self && self->state == ENGINE_IDLE && self->stopCause == ENGINE_STOP_CAUSE_USER; }
+bool engineWasStopped(Engine* self)  { return self && self->stopCause == ENGINE_STOP_CAUSE_USER; }
 
 void engineReset(Engine *self) {
     if (self) {
@@ -347,7 +370,7 @@ void engineReset(Engine *self) {
     }
 }
 
-void engineKeyPress_Strict(Engine *self, char key) {
+static void engineKeyPressInternal(Engine *self, char key, bool advanceAlways) {
     if (!self || self->state != ENGINE_RUNNING) return;
     if (checkTimeout(self)) return;
     if (tryCompleteSession(self)) return;
@@ -355,46 +378,27 @@ void engineKeyPress_Strict(Engine *self, char key) {
     char expectedChar = self->session->text[self->session->currentIndex];
     self->stats.totalKeystrokes++;
     if (key == expectedChar) {
+        self->stats.correctKeystrokes++;
+        if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Correct key");
+        signalEmit(&self->onCorrectKeystroke, self);
+    } else {
+        self->session->incorrectKeystrokesBitmap[self->session->currentIndex] = 1;
+        self->stats.incorrectKeystrokes++;
+        if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Incorrect key");
+        signalEmit(&self->onIncorrectKeystroke, self);
+    }
+    if (advanceAlways || key == expectedChar) {
         self->session->currentIndex++;
-        self->stats.correctKeystrokes++;
-        if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Strict: correct key");
-        signalEmit(&self->onCorrectKeystroke, self);
         tryCompleteSession(self);
-    } else {
-        self->session->incorrectKeystrokesBitmap[self->session->currentIndex] = 1;
-        self->stats.incorrectKeystrokes++;
-        if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Strict: incorrect key");
-        signalEmit(&self->onIncorrectKeystroke, self);
     }
-}
-
-void engineKeyPress_Flow(Engine *self, char key) {
-    if (!self || self->state != ENGINE_RUNNING) return;
-    if (checkTimeout(self)) return;
-    if (tryCompleteSession(self)) return;
-
-    char expectedChar = self->session->text[self->session->currentIndex];
-    self->stats.totalKeystrokes++;
-    if (key == expectedChar) {
-        self->stats.correctKeystrokes++;
-        if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: correct key");
-        signalEmit(&self->onCorrectKeystroke, self);
-    } else {
-        self->session->incorrectKeystrokesBitmap[self->session->currentIndex] = 1;
-        self->stats.incorrectKeystrokes++;
-        if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: incorrect key");
-        signalEmit(&self->onIncorrectKeystroke, self);
-    }
-    self->session->currentIndex++;
-    tryCompleteSession(self);
 }
 
 void engineKeyPress(Engine *self, char key) {
     if (!self) return;
     if (self->mode == StrictMode) {
-        engineKeyPress_Strict(self, key);
+        engineKeyPressInternal(self, key, false);
     } else if (self->mode == FlowMode) {
-        engineKeyPress_Flow(self, key);
+        engineKeyPressInternal(self, key, true);
     }
 }
 
@@ -536,6 +540,9 @@ void engineErrorToString(EngineError error, char* buffer, size_t bufferSize) {
         case ENGINE_ERROR_NOT_RUNNING: errorString = "Not Running"; break;
         case ENGINE_ERROR_CONFIG: errorString = "Config Error"; break;
         case ENGINE_ERROR_CONTENT: errorString = "Content Error"; break;
+        case ENGINE_ERROR_STATE: errorString = "State Error"; break;
+        case ENGINE_ERROR_PROVIDER: errorString = "Provider Error"; break;
+        case ENGINE_ERROR_FILE: errorString = "File Error"; break;
         case ENGINE_ERROR_UNKNOWN: errorString = "Unknown Error"; break;
     }
     snprintf(buffer, bufferSize, "%s", errorString);
@@ -591,22 +598,8 @@ SessionStats engineGetStats(Engine* engine) {
     stats.correctKeystrokes = engine->stats.correctKeystrokes;
     stats.incorrectKeystrokes = engine->stats.incorrectKeystrokes;
     stats.durationMs = engine->session->accumulatedTimeMs;
-    if (engine->stats.totalKeystrokes > 0) {
-        stats.accuracy = (double)engine->stats.correctKeystrokes / engine->stats.totalKeystrokes * 100.0;
-    } else {
-        stats.accuracy = 100.0;
-    }
-    double minutes = (double)stats.durationMs / 60000.0;
-    if (minutes > 0) {
-        stats.wpmRaw = (double)engine->session->currentIndex / 5.0 / minutes;
-        stats.wpm = stats.wpmRaw * (stats.accuracy / 100.0);
-    } else {
-        stats.wpmRaw = 0.0;
-        stats.wpm = 0.0;
-    }
-    time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
-    strftime(stats.timestamp, sizeof(stats.timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
+    computeSessionStats(&stats, engine->stats.correctKeystrokes, engine->stats.totalKeystrokes, engine->session->currentIndex, stats.durationMs);
+    memcpy(stats.timestamp, engine->session->cachedTimestamp, sizeof(stats.timestamp));
     
     return stats;
 }

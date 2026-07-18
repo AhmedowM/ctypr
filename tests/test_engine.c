@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <assert.h>
 
 #ifdef _WIN32
@@ -234,7 +235,7 @@ static void test_strict_correct_key(void) {
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should be 1");
     ASSERT(stats.correctKeystrokes == 1, "correctKeystrokes should be 1");
-    ASSERT(stats.accuracy == 100.0, "accuracy should be 100%%");
+    ASSERT(fabs(stats.accuracy - 100.0) < 0.001, "accuracy should be ~100%%");
     
     engineDestroy(e);
     PASS();
@@ -517,6 +518,21 @@ static void test_error_to_string_all(void) {
     engineErrorToString(ENGINE_ERROR_INVALID_TIMEOUT, buf, sizeof(buf));
     ASSERT(strcmp(buf, "Invalid Timeout") == 0, "INVALID_TIMEOUT string");
     
+    engineErrorToString(ENGINE_ERROR_CONTENT, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Content Error") == 0, "CONTENT string");
+    
+    engineErrorToString(ENGINE_ERROR_CONFIG, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Config Error") == 0, "CONFIG string");
+    
+    engineErrorToString(ENGINE_ERROR_STATE, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "State Error") == 0, "STATE string");
+    
+    engineErrorToString(ENGINE_ERROR_PROVIDER, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "Provider Error") == 0, "PROVIDER string");
+    
+    engineErrorToString(ENGINE_ERROR_FILE, buf, sizeof(buf));
+    ASSERT(strcmp(buf, "File Error") == 0, "FILE string");
+    
     engineErrorToString(ENGINE_ERROR_UNKNOWN, buf, sizeof(buf));
     ASSERT(strcmp(buf, "Unknown Error") == 0, "UNKNOWN string");
     
@@ -623,7 +639,7 @@ static void test_stats_wpm(void) {
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 4, "totalKeystrokes should be 4");
     ASSERT(stats.correctKeystrokes == 4, "correctKeystrokes should be 4");
-    ASSERT(stats.accuracy == 100.0, "accuracy should be 100%%");
+    ASSERT(fabs(stats.accuracy - 100.0) < 0.001, "accuracy should be ~100%%");
     
     engineDestroy(e);
     PASS();
@@ -997,7 +1013,7 @@ static void test_auto_save_session(void) {
     ASSERT(sessions != NULL, "sessions should not be NULL");
     ASSERT(sessions[0].totalChars == 44, "totalChars should be 44");
     ASSERT(sessions[0].correctChars == 44, "correctChars should be 44");
-    ASSERT(sessions[0].accuracy == 100.0, "accuracy should be 100.0");
+    ASSERT(fabs(sessions[0].accuracy - 100.0) < 0.001, "accuracy should be ~100.0");
     free(sessions);
 
     engineDestroy(e);
@@ -1014,7 +1030,7 @@ static void test_stats_before_start(void) {
     SessionStats stats = engineGetStats(e);
     ASSERT(stats.totalKeystrokes == 0, "totalKeystrokes should be 0");
     ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should be 0");
-    ASSERT(stats.accuracy == 100.0, "accuracy should default to 100.0");
+    ASSERT(fabs(stats.accuracy - 100.0) < 0.001, "accuracy should default to ~100.0");
     ASSERT(stats.wpm == 0.0, "wpm should be 0.0");
     ASSERT(stats.wpmRaw == 0.0, "wpmRaw should be 0.0");
     ASSERT(stats.durationMs == 0, "durationMs should be 0");

@@ -32,8 +32,20 @@ static const char* SCHEMA = R"(
 )";
 
 static char* getFullPath(const char* dbPath) {
-    if (!dbPath || strcmp(dbPath, "~/.typr/typr.db") == 0) {
-        // Fallback to current directory
+    if (!dbPath) return strdup("typr.db");
+    if (dbPath[0] == '~') {
+        const char* home = getenv("HOME");
+#ifdef _WIN32
+        if (!home) home = getenv("USERPROFILE");
+#endif
+        if (home) {
+            size_t len = strlen(home) + strlen(dbPath); // +1 for '/', null terminator included
+            char* full = malloc(len + 1);
+            if (full) {
+                snprintf(full, len + 1, "%s%s", home, dbPath + 1);
+                return full;
+            }
+        }
         return strdup("typr.db");
     }
     return strdup(dbPath);

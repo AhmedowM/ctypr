@@ -180,6 +180,9 @@ static ContentChunk _cpGetFile(ContentProvider* cp) {
     while (total < sizeof(cp->text) - 1 && (n = fread(cp->text + total, 1, sizeof(cp->text) - 1 - total, f)) > 0) {
         total += n;
     }
+    if (n > 0 && cp->logger) {
+        loggerLog(cp->logger, LOG_LEVEL_WARNING, "File provider: file exceeds buffer, truncated to 4095 bytes");
+    }
     cp->text[total] = '\0';
     cp->length = total;
     cp->currentIndex = 0;

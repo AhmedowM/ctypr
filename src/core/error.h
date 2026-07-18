@@ -12,6 +12,9 @@ typedef enum EngineError {
     ENGINE_ERROR_NOT_RUNNING,     ///< Operation failed because engine is not running
     ENGINE_ERROR_CONFIG,          ///< Invalid engine configuration
     ENGINE_ERROR_CONTENT,         ///< Content provider returned empty or missing text
+    ENGINE_ERROR_STATE,           ///< State machine error (invalid transition)
+    ENGINE_ERROR_PROVIDER,        ///< Provider error (database query failure)
+    ENGINE_ERROR_FILE,            ///< File I/O error (file not found, permission denied)
     ENGINE_ERROR_UNKNOWN          ///< Unknown or unspecified error
 } EngineError;
 

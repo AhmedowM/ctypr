@@ -143,6 +143,11 @@ bool engineIsTimedOut(Engine* self);
 /// @return true if state is ENGINE_IDLE and stop cause is USER.
 bool engineIsStopped(Engine* self);
 
+/// @brief Check if the engine's last stop cause was user-initiated, regardless of current state.
+/// @param self The Engine instance.
+/// @return true if stop cause is USER (even after state has changed).
+bool engineWasStopped(Engine* self);
+
 // ── Keystroke Processing ─────────────────────────────────────────────────────
 
 /// @brief Process a single key press.
