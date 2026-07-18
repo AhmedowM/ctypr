@@ -36,9 +36,15 @@ execute_process(
 )
 
 if(GIT_TAG MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+    set(PROJECT_VERSION_MAJOR "${CMAKE_MATCH_1}")
+    set(PROJECT_VERSION_MINOR "${CMAKE_MATCH_2}")
+    set(PROJECT_VERSION_PATCH "${CMAKE_MATCH_3}")
     set(PROJECT_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
 else()
-    set(PROJECT_VERSION "0.1.0")  # Fallback if no tag
+    set(PROJECT_VERSION_MAJOR "0")
+    set(PROJECT_VERSION_MINOR "1")
+    set(PROJECT_VERSION_PATCH "0")
+    set(PROJECT_VERSION "0.1.0")
 endif()
 
 set(CMAKE_C_STANDARD 17)
@@ -137,9 +143,19 @@ install(TARGETS ctypr sqlite3
 )
 
 # Install headers
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/core/
+install(DIRECTORY
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/content/
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/format/
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/db/
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h"
+)
+
+# Install generated version header
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 # Generate and install CMake config files
