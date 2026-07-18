@@ -47,16 +47,16 @@ int main(void) {
 
 | Module | Header | Purpose |
 |---|---|---|
-| Engine | @ref engine.h | Typing session lifecycle, keystroke processing, state machine |
-| Callback | @ref callback.h | Event registration and disconnection |
-| Content | @ref content.h | String, file, database, and web content providers |
-| Stats | @ref stats.h | Session statistics (WPM, accuracy, keystrokes) |
-| State | @ref state.h | Engine state and stop cause enums |
-| Error | @ref error.h | Error codes and string conversion |
-| Event | @ref event.h | Event types and callback typedef |
-| Repository | @ref repository.h | SQLite session CRUD and queries |
-| Logger | @ref logger.h | Configurable diagnostic logging |
-| Formatter | @ref formatter.h | Text chunking (used internally by file provider) |
+| Engine | `engine.h` | Typing session lifecycle, keystroke processing, state machine |
+| Callback | `callback.h` | Event registration and disconnection |
+| Content | `content.h` | String, file, database, and web content providers |
+| Stats | `stats.h` | Session statistics (WPM, accuracy, keystrokes) |
+| State | `state.h` | Engine state and stop cause enums |
+| Error | `error.h` | Error codes and string conversion |
+| Event | `event.h` | Event types and callback typedef |
+| Repository | `repository.h` | SQLite session CRUD and queries |
+| Logger | `logger.h` | Configurable diagnostic logging |
+| Formatter | `formatter.h` | Text chunking (used internally by file provider) |
 
 ## Building
 
