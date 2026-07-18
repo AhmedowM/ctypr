@@ -1,3 +1,7 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "engine.h"
 #include "callback.h"
 #include "error.h"
@@ -12,6 +16,7 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+#include <time.h>
 
 #ifdef _WIN32
 #include <windows.h>

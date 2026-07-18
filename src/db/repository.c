@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define strdup _strdup
+#endif
+
 #include <sqlite3.h>
 
 typedef struct Repository {
@@ -15,21 +19,20 @@ typedef struct Repository {
     sqlite3* db;
 } Repository;
 
-static const char* SCHEMA = R"(
-    CREATE TABLE IF NOT EXISTS sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT NOT NULL,
-        mode TEXT NOT NULL,
-        total_chars INTEGER NOT NULL,
-        correct_chars INTEGER NOT NULL,
-        duration_ms INTEGER NOT NULL,
-        wpm REAL NOT NULL,
-        wpm_raw REAL NOT NULL,
-        accuracy REAL NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_sessions_mode ON sessions(mode);
-    CREATE INDEX IF NOT EXISTS idx_sessions_timestamp ON sessions(timestamp);
-)";
+static const char* SCHEMA =
+"CREATE TABLE IF NOT EXISTS sessions (\n"
+"    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+"    timestamp TEXT NOT NULL,\n"
+"    mode TEXT NOT NULL,\n"
+"    total_chars INTEGER NOT NULL,\n"
+"    correct_chars INTEGER NOT NULL,\n"
+"    duration_ms INTEGER NOT NULL,\n"
+"    wpm REAL NOT NULL,\n"
+"    wpm_raw REAL NOT NULL,\n"
+"    accuracy REAL NOT NULL\n"
+");\n"
+"CREATE INDEX IF NOT EXISTS idx_sessions_mode ON sessions(mode);\n"
+"CREATE INDEX IF NOT EXISTS idx_sessions_timestamp ON sessions(timestamp);\n";
 
 static char* getFullPath(const char* dbPath) {
     if (!dbPath) return strdup("typr.db");
