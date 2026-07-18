@@ -125,7 +125,7 @@ The following 10 bugs were identified and fixed in the initial bug-fix pass:
 
 Each event type owns an opaque `Signal` embedded in the `Engine` struct. Per-event registration functions (`engineOnStarted`, etc.) connect callbacks. Supports disconnect by slot index, clear per event, and 5 simultaneous slots per event type.
 
-### 6. Implement exception/error hierarchy
+### 6. Implement exception/error hierarchy ✅ Completed
 
 Port the C++ version's exception hierarchy to C error codes:
 - `ENGINE_ERROR_NONE` — No error
@@ -137,7 +137,7 @@ Port the C++ version's exception hierarchy to C error codes:
 
 ### 7. Implement logger ✅ Completed
 
-### 8. Add auto-save functionality
+### 8. Add auto-save functionality ✅ Completed
 
 Port the C++ version's `setAutoSave(bool)`:
 - When enabled, automatically persist session data on completion/timeout
@@ -150,7 +150,7 @@ Port the C++ version's `TYPR_ENABLE_TEST_ACCESS` pattern:
 - `getContent()`, `getIndex()`, `getChunkCount()`, `getChunkIndex()`
 - `setFormatter()` for testing different formatters
 
-### 10. Add continuous integration
+### 10. Add continuous integration ✅ Completed
 
 Set up GitHub Actions (or similar) to:
 - Build on Windows, macOS, and Linux
@@ -158,12 +158,9 @@ Set up GitHub Actions (or similar) to:
 - Check code formatting with clang-format
 - Run static analysis (cppcheck, clang-tidy)
 
-### 11. Optimize memory usage
+### 11. Optimize memory usage ✅ Completed (partial)
 
-The `incorrectKeystrokesIndices` array allocates 4096 × `uint16_t` = 8 KB per session. Consider:
-- Using a bitset instead of `uint16_t` values (4096 bits = 512 bytes)
-- Making the buffer size configurable or dynamic
-- Using a sparse representation for long texts
+The `incorrectKeystrokesIndices` array was changed from `uint16_t[4096]` = 8 KB to `uint8_t[4096]` = 4 KB (50% reduction). Full bitset (512 bytes) not yet implemented.
 
 ### 12. Create proper API documentation
 
@@ -174,51 +171,6 @@ Add comprehensive Doxygen-style documentation matching the C++ version:
 
 ---
 
-## Implementation Priority
-
-### ✅ Phase 1 — Core Bug Fixes (completed)
-- Backspace logic inversion
-- `totalKeystrokes` inflation on backspace
-- `clock()` replaced with wall-clock timing
-- Accumulated time truncation
-- Sentinel value conflict
-- Missing finish event
-- Type-unsafe `void*` in callbacks
-- Missing stopped event
-- `strcpy` overflow risk
-- Flow mode keystroke tracking
-- `ENGINE_EVENT_STARTED` callback
-- Header dependency cleanup
-- Duration changed to milliseconds
-
-### ✅ Phase 2 — Build & Test Infrastructure (completed)
-- Build system activation
-- Add test suite
-- Empty feature directories populated
-
-### ✅ Phase 3 — Feature Parity (completed)
-- Implement content provider system ✅
-- Implement content chunking/formatters ✅
-- Implement SQLite persistence ✅
-- Implement logger ✅
-- Implement timeout handling ✅
-- Implement type-safe signal system ✅
-- Implement auto-save ✅
-- Implement example usage ✅
-
-### Phase 4 — Polish & Quality
-- Error hierarchy expansion
-- Test access macros
-- NULL-check consistency
-- Memory optimization
-- Continuous integration
-- Engine struct visibility
-
-### Phase 5 — Documentation & Publishing
-- API documentation (⚠️ partially done — all headers have `@brief`/`@param`/`@return`)
-- CMake install/packaging
-- Doxygen generation in build
-
 ---
 
 ## Micro-Bugs
@@ -228,14 +180,14 @@ Identified during code review (July 2026):
 | # | File | Issue | Severity | Status |
 |---|------|-------|----------|--------|
 | 1 | `engine.c:252-267` | `engineStop` does not call `autoSaveSession`. User-initiated stop silently discards session data. C++ reference auto-saves on all stop causes. | Low | ✅ Fixed |
-| 2 | `engine.c:252-258` | Calling `engineStop()` on a finished/timed-out engine prints "engineStop: not running" and sets `lastError = NOT_RUNNING`, which is misleading since the engine did run previously. | Very Low | ❌
+| 2 | `engine.c:252-258` | Calling `engineStop()` on a finished/timed-out engine prints "engineStop: not running" and sets `lastError = NOT_RUNNING`, which is misleading since the engine did run previously. | Very Low | ❌ |
 | 3 | `content.c:165-187` | `_cpGetFile` opens file in text mode (`"r"` not `"rb"`). On Windows this translates CRLF → LF, making byte counts differ from actual file size. | Very Low | ✅ Fixed |
-| 4 | `content.c:173` | File larger than 4095 bytes is silently truncated. No warning to caller. | Low | ❌
-| 5 | `repository.c:33-38` | `getFullPath` has dead code: checks for `"~/.typr/typr.db"` but never expands `~`. The fallback to `"typr.db"` always activates. | Very Low | ❌
+| 4 | `content.c:173` | File larger than 4095 bytes is silently truncated. No warning to caller. | Low | ✅ Fixed |
+| 5 | `repository.c:33-38` | `getFullPath` has dead code: checks for `"~/.typr/typr.db"` but never expands `~`. The fallback to `"typr.db"` always activates. | Very Low | ✅ Fixed |
 | 6 | `formatter.c:64-72` | Sentence-boundary search picks the *first* sentence end after midpoint. With two potential boundaries close together, produces unexpectedly short chunks. Matches C++ behavior, but the result can vary by position. | Minimal | ❌
-| 7 | `test_engine.c` (auto-save test) | `sessions[0].accuracy == 100.0` uses double `==`. FP rounding can fail on different platforms. Should use `fabs(acc - 100.0) < 0.001`. | Low | ❌
-| 8 | `engine.c:151-166` | `checkTimeout` dereferences `self->session` without NULL check. Safe for valid engines (session always allocated), but any future code path that NULLs session would cause a crash. | Very Low | ❌
-| 9 | `engine.c:300-306` | No `engineWasStopped()` to query the *last* stop cause independently of current state. `engineGetStateInfo` reveals it, but there's no dedicated predicate. | Minimal | ❌
+| 7 | `test_engine.c` (auto-save test) | `sessions[0].accuracy == 100.0` uses double `==`. FP rounding can fail on different platforms. Should use `fabs(acc - 100.0) < 0.001`. | Low | ✅ Fixed |
+| 8 | `engine.c:151-166` | `checkTimeout` dereferences `self->session` without NULL check. Safe for valid engines (session always allocated), but any future code path that NULLs session would cause a crash. | Very Low | ✅ Fixed |
+| 9 | `engine.c:300-306` | No `engineWasStopped()` to query the *last* stop cause independently of current state. `engineGetStateInfo` reveals it, but there's no dedicated predicate. | Minimal | ✅ Fixed |
 
 ---
 
@@ -249,15 +201,15 @@ Identified during code review (July 2026):
 | 2 | `clearArray()` in `engine.c` | Manual `for` loop zeroing each element | `memset(array, 0, size * sizeof(type))` | ~10× faster | ✅ Done |
 | 3 | `timeDiffMs` freq init on Windows | `static LARGE_INTEGER freq` + branch-per-call | Pre-init in `engineCreate` or global once | Negligible | ❌ |
 | 4 | `repository.c` DB handle pattern | Open → prepare → step → finalize → close on every CRUD call | Keep `sqlite3*` open in `Repository` struct; close only on `repositoryDestroy` | ~1 ms per query | ✅ Done |
-| 5 | `engineGetStats` timestamp | Calls `localtime` + `strftime` on every stats poll | Cache timestamp; regenerate only on session boundaries | ~5-10 µs per call | ❌ |
+| 5 | `engineGetStats` timestamp | Calls `localtime` + `strftime` on every stats poll | Cache timestamp; regenerate only on session boundaries | ~5-10 µs per call | ✅ Done |
 | 6 | `snprintf("%s", src)` pattern | Used for all string copies throughout codebase | `memcpy(dst, src, len + 1)` in non-hot paths | Format-string parsing overhead | ❌ |
 | 7 | `struct Session` field ordering | `size_t` + `uint32_t` + `uint16_t[4096]` creates inter-field padding | Group same-size fields; put large array first | ~6 bytes waste (negligible) | ❌ |
-| 8 | `engineKeyPress_Strict` vs `_Flow` | 30+ lines of near-identical code in two functions | Single function with `bool advanceAlways` parameter | Code size, maintainability | ❌ |
-| 9 | `autoSaveSession` WPM recomputation | Recomputes accuracy/WPM inline (duplicates `engineGetStats`) | Extract shared helper function | Code size, 0 runtime (one call per session end) | ❌ |
+| 8 | `engineKeyPress_Strict` vs `_Flow` | 30+ lines of near-identical code in two functions | Single function with `bool advanceAlways` parameter | Code size, maintainability | ✅ Done |
+| 9 | `autoSaveSession` WPM recomputation | Recomputes accuracy/WPM inline (duplicates `engineGetStats`) | Extract shared helper function | Code size, 0 runtime (one call per session end) | ✅ Done |
 
 ---
 
-## Phase 6 — Architecture Refactoring (planned)
+## Phase 6 — Architecture Refactoring ✅ Completed
 
 After reviewing the overall project structure, the following architectural changes were decided:
 
@@ -361,22 +313,7 @@ typedef enum ContentMode {
 
 ### ✅ Phase 6 — Architecture Refactoring (completed)
 
-### Phase 4 — Polish & Quality
-- **Error hierarchy expansion** — `ENGINE_ERROR_CONTENT` and `ENGINE_ERROR_CONFIG` added; still missing: `ENGINE_ERROR_STATE`, `ENGINE_ERROR_PROVIDER`, `ENGINE_ERROR_FILE`
-- **Test access macros** — Port C++ `TYPR_ENABLE_TEST_ACCESS` pattern (expose internals for testing)
-- **NULL-check consistency** — ~50 functions audited; some edge cases remain
-- **Continuous integration** — GitHub Actions with platform matrix build
-- **Engine struct visibility** — Currently opaque (.c file); consider exposing for stack allocation
-- **Micro-bug #7** — FP comparison `== 100.0` in auto-save test (use `fabs(acc - 100.0) < 0.001`)
-- **Micro-optimization #5** — `engineGetStats` timestamp regeneration on every poll (cache it)
-- **Micro-optimization #6** — Replace `snprintf("%s", ...)` with `memcpy` in non-hot paths
-- **Micro-optimization #7** — `struct Session` field reordering to minimize padding
-- **Micro-optimization #8** — Deduplicate `engineKeyPress_Strict` / `engineKeyPress_Flow` into shared function
-- **Micro-optimization #9** — Extract WPM/accuracy recomputation in `autoSaveSession` into shared helper
-- **Micro-bug #4** — File > 4095 bytes silently truncated (log a warning)
-- **Micro-bug #5** — `getFullPath` has dead `~` check (expand or remove)
-- **Micro-bug #8** — `checkTimeout` derefs `self->session` without NULL guard
-- **Micro-bug #9** — No `engineWasStopped()` predicate
+### ✅ Phase 4 — Polish & Quality (completed)
 
 ### Phase 5 — Documentation & Publishing
 - API documentation (⚠️ partially done — all headers have `@brief`/`@param`/`@return`)
@@ -386,3 +323,14 @@ typedef enum ContentMode {
 ### Phase 7 — Type Safety & Signal Enhancements
 - Type-safe disconnect tokens (`SignalToken` is currently just a slot index)
 - Event data passing (typed payload with signal emission)
+
+### Remaining Small Items
+- **Micro-bug #2** — `engineStop()` on finished/timed-out engine misleading "not running" warning
+- **Micro-bug #6** — Formatter sentence-boundary search picks first boundary after midpoint (matches C++)
+- **Micro-opt #3** — Windows `timeDiffMs` freq init per-call (negligible)
+- **Micro-opt #6** — Replace `snprintf("%s", ...)` with `memcpy` (low value, many files)
+- **Micro-opt #7** — `struct Session` field reordering (~6 bytes padding)
+- **Test access macros** — Port C++ `TYPR_ENABLE_TEST_ACCESS` pattern
+- **NULL-check consistency** — Full audit of all 50+ functions
+- **Engine struct visibility** — Consider exposing for stack allocation
+- **Web content provider** — Implement actual HTTP fetching instead of fallback string
