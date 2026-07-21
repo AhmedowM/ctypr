@@ -17,14 +17,17 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBUILD_TESTING=ON -DBUILD_EXAMPLES=ON
+    - name: Lint commit messages
+      uses: wagoid/commitlint-github-action@v5
 
-      - name: Build
-        run: cmake --build build --config ${{ matrix.config }}
+    - name: Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBUILD_TESTING=ON -DBUILD_EXAMPLES=ON
 
-      - name: Test
-        working-directory: build
-        run: ctest --output-on-failure -C ${{ matrix.config }}
+    - name: Build
+      run: cmake --build build --config ${{ matrix.config }}
+
+    - name: Test
+      working-directory: build
+      run: ctest --output-on-failure -C ${{ matrix.config }}

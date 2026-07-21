@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# commit-msg hook: enforce conventional commit format
+# Types: feat | fix | docs | refactor | improve | test | chore | revert
+# Format: <type>(<scope>): <subject — ≤50 chars, imperative mood>
+#
+# No external dependencies — runs in any POSIX shell (Git Bash, bash, sh).
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Strip comment lines (lines starting with #)
+COMMIT_MSG=$(echo "$COMMIT_MSG" | grep -v '^#' | head -1)
+
+# Allow merge commits and revert commits without conventional prefix
+if echo "$COMMIT_MSG" | grep -qE '^Merge|^Revert|^Merge branch'; then
+    exit 0
+fi
+
+# Pattern: type[(scope)][!]: subject
+if ! echo "$COMMIT_MSG" | grep -qE '^(feat|fix|docs|refactor|improve|test|chore|revert)(\([a-z0-9/_\-]+\))?!?:\s.+'; then
+    echo "ERROR: Invalid commit message format." >&2
+    echo "" >&2
+    echo "Expected: <type>(<scope>): <subject>" >&2
+    echo "" >&2
+    echo "Valid types: feat, fix, docs, refactor, improve, test, chore, revert" >&2
+    echo "" >&2
+    echo "Your message:" >&2
+    echo "  $COMMIT_MSG" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo '  feat(engine): add EngineSnapshot struct for UI rendering' >&2
+    echo '  fix(repository): add missing / separator in tilde path expansion' >&2
+    echo '  docs: fix typos in index.md path references' >&2
+    echo '  test: add 10 tests for EngineSnapshot and SEGMENT_COMPLETED signal' >&2
+    echo "" >&2
+    echo "To skip this check (not recommended): git commit --no-verify" >&2
+    exit 1
+fi
+
+# Extract subject only (after the colon-space)
+SUBJECT=$(echo "$COMMIT_MSG" | sed -E 's/^[^:]+: //')
+
+# Check subject length (allow up to 72 chars as soft warning, hard stop at 80)
+SUBJECT_LEN=${#SUBJECT}
+if [ "$SUBJECT_LEN" -gt 80 ]; then
+    echo "ERROR: Commit subject is ${SUBJECT_LEN} chars (max 80, target ≤50)." >&2
+    echo "Subject: $SUBJECT" >&2
+    exit 1
+fi
+
+if [ "$SUBJECT_LEN" -gt 50 ]; then
+    echo "WARNING: Commit subject is ${SUBJECT_LEN} chars (target ≤50)." >&2
+fi
+
+exit 0
