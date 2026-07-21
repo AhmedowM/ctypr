@@ -11,9 +11,9 @@ module.exports = {
       'chore',
       'revert',
     ]],
-    'subject-case': [2, 'always', 'lower-case'],
-    'subject-max-length': [2, 'always', 50],
-    'body-max-line-length': [2, 'always', 72],
+    'subject-case': [0],
+    'subject-max-length': [1, 'always', 50],
+    'body-max-line-length': [0],
     'header-max-length': [2, 'always', 80],
   },
 };

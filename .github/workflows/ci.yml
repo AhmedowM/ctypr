@@ -7,6 +7,15 @@ on:
     branches: [master]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Lint commit messages
+        uses: wagoid/commitlint-github-action@v5
+
   build:
     strategy:
       fail-fast: false
@@ -17,17 +26,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Lint commit messages
-      uses: wagoid/commitlint-github-action@v5
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBUILD_TESTING=ON -DBUILD_EXAMPLES=ON
 
-    - name: Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBUILD_TESTING=ON -DBUILD_EXAMPLES=ON
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }}
 
-    - name: Build
-      run: cmake --build build --config ${{ matrix.config }}
-
-    - name: Test
-      working-directory: build
-      run: ctest --output-on-failure -C ${{ matrix.config }}
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure -C ${{ matrix.config }}
