@@ -42,10 +42,10 @@ static char* getFullPath(const char* dbPath) {
         if (!home) home = getenv("USERPROFILE");
 #endif
         if (home) {
-            size_t len = strlen(home) + strlen(dbPath); // +1 for '/', null terminator included
+            size_t len = strlen(home) + strlen(dbPath) + 1;
             char* full = malloc(len + 1);
             if (full) {
-                snprintf(full, len + 1, "%s%s", home, dbPath + 1);
+                snprintf(full, len + 1, "%s/%s", home, dbPath + 1);
                 return full;
             }
         }

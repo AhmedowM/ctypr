@@ -4,6 +4,7 @@
 #include "event.h"
 #include "state.h"
 #include "stats.h"
+#include "snapshot.h"
 #include "logger.h"
 #include "signal_internal.h"
 #include "content.h"
@@ -54,6 +55,10 @@ static int64_t timeDiffMs(ctypr_time_t* end, ctypr_time_t* start) {
 #else
     int64_t secDiff = end->tv_sec - start->tv_sec;
     int64_t nsecDiff = end->tv_nsec - start->tv_nsec;
+    if (nsecDiff < 0) {
+        secDiff--;
+        nsecDiff += 1000000000;
+    }
     return secDiff * 1000 + nsecDiff / 1000000;
 #endif
 }
@@ -100,8 +105,15 @@ static const char* modeToString(EngineMode mode) {
 
 static void cacheTimestamp(char* buf, size_t size) {
     time_t now = time(NULL);
-    struct tm* tm_info = localtime(&now);
-    strftime(buf, size, "%Y-%m-%d %H:%M:%S", tm_info);
+#ifdef _WIN32
+    struct tm tm_info;
+    localtime_s(&tm_info, &now);
+    strftime(buf, size, "%Y-%m-%d %H:%M:%S", &tm_info);
+#else
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    strftime(buf, size, "%Y-%m-%d %H:%M:%S", &tm_info);
+#endif
 }
 
 static void computeSessionStats(SessionStats* stats, uint32_t correctChars, uint32_t totalChars, uint32_t currentIndex, int64_t durationMs) {
@@ -150,6 +162,7 @@ static void completeSession(Engine* self) {
     if (self->logger) loggerLog(self->logger, LOG_LEVEL_INFO, "Session completed");
     cacheTimestamp(self->session->cachedTimestamp, sizeof(self->session->cachedTimestamp));
     autoSaveSession(self);
+    signalEmit(&self->onSegmentCompleted, self);
     signalEmit(&self->onFinished, self);
     signalEmit(&self->onStopped, self);
 }
@@ -167,7 +180,7 @@ static bool checkTimeout(Engine* self) {
     if (self->state == ENGINE_RUNNING) {
         updateTime(self->session);
     }
-    if (self->session->accumulatedTimeMs >= (int64_t)self->timeout * 1000) {
+    if (self->session->accumulatedTimeMs >= (int64_t)self->timeout * 1000LL) {
         self->state = ENGINE_IDLE;
         self->stopCause = ENGINE_STOP_CAUSE_TIMEOUT;
         cacheTimestamp(self->session->cachedTimestamp, sizeof(self->session->cachedTimestamp));
@@ -605,6 +618,54 @@ SessionStats engineGetStats(Engine* engine) {
     stats.durationMs = engine->session->accumulatedTimeMs;
     computeSessionStats(&stats, engine->stats.correctKeystrokes, engine->stats.totalKeystrokes, engine->session->currentIndex, stats.durationMs);
     memcpy(stats.timestamp, engine->session->cachedTimestamp, sizeof(stats.timestamp));
-    
+
     return stats;
+}
+
+// snapshot.h
+
+EngineSnapshot engineGetSnapshot(Engine* engine) {
+    EngineSnapshot snapshot;
+    memset(&snapshot, 0, sizeof(EngineSnapshot));
+
+    if (!engine || !engine->session) {
+        snapshot.state = ENGINE_ERROR;
+        snapshot.stopCause = ENGINE_STOP_CAUSE_ERROR;
+        return snapshot;
+    }
+
+    if (engine->state == ENGINE_RUNNING && engine->session->isTimingStarted) {
+        updateTime(engine->session);
+    }
+
+    memcpy(snapshot.text, engine->session->text, sizeof(engine->session->text));
+    snapshot.length = engine->session->length;
+    snapshot.cursorIndex = engine->session->currentIndex;
+
+    if (engine->session->currentIndex < engine->session->length) {
+        snapshot.expectedChar = engine->session->text[engine->session->currentIndex];
+    } else {
+        snapshot.expectedChar = '\0';
+    }
+
+    for (size_t i = 0; i < engine->session->length && i < ENGINE_SNAPSHOT_TEXT_MAX; i++) {
+        snapshot.incorrectFlags[i] = engine->session->incorrectKeystrokesBitmap[i] != 0;
+    }
+
+    // Populate SessionStats inline
+    snapshot.stats.totalKeystrokes = engine->stats.totalKeystrokes;
+    snapshot.stats.correctKeystrokes = engine->stats.correctKeystrokes;
+    snapshot.stats.incorrectKeystrokes = engine->stats.incorrectKeystrokes;
+    snapshot.stats.durationMs = engine->session->accumulatedTimeMs;
+    computeSessionStats(&snapshot.stats,
+                        engine->stats.correctKeystrokes,
+                        engine->stats.totalKeystrokes,
+                        engine->session->currentIndex,
+                        engine->session->accumulatedTimeMs);
+    memcpy(snapshot.stats.timestamp, engine->session->cachedTimestamp, sizeof(snapshot.stats.timestamp));
+
+    snapshot.state = engine->state;
+    snapshot.stopCause = engine->stopCause;
+
+    return snapshot;
 }

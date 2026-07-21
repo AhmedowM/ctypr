@@ -8,6 +8,7 @@
 #include "event.h"
 #include "state.h"
 #include "stats.h"
+#include "snapshot.h"
 #include "repository.h"
 #include "content.h"
 
@@ -589,6 +590,7 @@ static void test_null_safety(void) {
     engineBackspacePress(NULL);
     engineGetStateInfo(NULL);
     engineGetStats(NULL);
+    engineGetSnapshot(NULL);
     engineIsRunning(NULL);
     engineIsPaused(NULL);
     engineIsIdle(NULL);
@@ -601,6 +603,7 @@ static void test_null_safety(void) {
     engineOnTimeout(NULL, NULL, NULL);
     engineOnFinished(NULL, NULL, NULL);
     engineOnBackspace(NULL, NULL, NULL);
+    engineOnSegmentCompleted(NULL, NULL, NULL);
     engineDisconnect(NULL, ENGINE_EVENT_STARTED, 0);
     engineClearEvent(NULL, ENGINE_EVENT_STARTED);
     engineSetAutoSave(NULL, NULL, false);
@@ -1053,6 +1056,228 @@ static void test_stats_null_engine(void) {
     PASS();
 }
 
+/* ===== EngineSnapshot tests ===== */
+
+static void test_snapshot_null_engine(void) {
+    TEST("Snapshot: NULL engine returns error state");
+    EngineSnapshot snap = engineGetSnapshot(NULL);
+    ASSERT(snap.state == ENGINE_ERROR, "state should be ENGINE_ERROR");
+    ASSERT(snap.stopCause == ENGINE_STOP_CAUSE_ERROR, "stopCause should be ERROR");
+    ASSERT(snap.length == 0, "length should be 0");
+    ASSERT(snap.cursorIndex == 0, "cursorIndex should be 0");
+    ASSERT(snap.expectedChar == '\0', "expectedChar should be NUL");
+    ASSERT(snap.text[0] == '\0', "text should be empty");
+    PASS();
+}
+
+static void test_snapshot_before_start(void) {
+    TEST("Snapshot: idle engine returns empty session");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    EngineSnapshot snap = engineGetSnapshot(e);
+    ASSERT(snap.state == ENGINE_IDLE, "state should be IDLE");
+    ASSERT(snap.stopCause == ENGINE_STOP_CAUSE_NONE, "stopCause should be NONE");
+    ASSERT(snap.length == 0, "length should be 0 before start");
+    ASSERT(snap.cursorIndex == 0, "cursorIndex should be 0");
+    ASSERT(snap.expectedChar == '\0', "expectedChar should be NUL when no text");
+    ASSERT(snap.text[0] == '\0', "text should be empty");
+    ASSERT(snap.stats.totalKeystrokes == 0, "stats.totalKeystrokes should be 0");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_snapshot_after_start(void) {
+    TEST("Snapshot: after start, text and expected char are populated");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+
+    EngineSnapshot snap = engineGetSnapshot(e);
+    ASSERT(snap.state == ENGINE_RUNNING, "state should be RUNNING");
+    ASSERT(snap.length > 0, "length should be > 0");
+    ASSERT(snap.cursorIndex == 0, "cursorIndex should be 0 at start");
+    ASSERT(snap.expectedChar == 'T', "expectedChar should be 'T' (first char of test text)");
+    ASSERT(strcmp(snap.text, "The quick brown fox jumps over the lazy dog.") == 0,
+           "text should match test content");
+    ASSERT(snap.incorrectFlags[0] == false, "first char should not be flagged incorrect");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_snapshot_progress_and_flags(void) {
+    TEST("Snapshot: progress updates cursor and incorrect flags");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+
+    /* Type 'T' (correct), 'X' (incorrect, no advance in strict), 'h' (correct after retry)... */
+    engineKeyPress(e, 'T');  /* correct, advances to index 1 */
+    engineKeyPress(e, 'X');  /* incorrect, stays at index 1 */
+    engineKeyPress(e, 'h');  /* correct, advances to index 2 */
+
+    EngineSnapshot snap = engineGetSnapshot(e);
+    ASSERT(snap.cursorIndex == 2, "cursorIndex should be 2");
+    ASSERT(snap.expectedChar == 'e', "expectedChar should be 'e' at index 2");
+    ASSERT(snap.stats.totalKeystrokes == 3, "totalKeystrokes should be 3");
+    ASSERT(snap.stats.correctKeystrokes == 2, "correctKeystrokes should be 2");
+    ASSERT(snap.stats.incorrectKeystrokes == 1, "incorrectKeystrokes should be 1");
+
+    /* Strict mode: incorrect keystroke doesn't advance, so index 1 ('h') got incorrectly hit */
+    ASSERT(snap.incorrectFlags[1] == true, "index 1 should be flagged incorrect");
+    ASSERT(snap.incorrectFlags[0] == false, "index 0 should not be flagged");
+    ASSERT(snap.incorrectFlags[2] == false, "index 2 should not be flagged");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_snapshot_flow_mode_incorrect_flags(void) {
+    TEST("Snapshot: flow mode flags incorrect and advances");
+    Engine* e = createTestEngine(FlowMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+
+    engineKeyPress(e, 'T');  /* correct, index 0 -> 1 */
+    engineKeyPress(e, 'X');  /* incorrect, advances 1 -> 2 (flow mode) */
+
+    EngineSnapshot snap = engineGetSnapshot(e);
+    ASSERT(snap.cursorIndex == 2, "cursorIndex should be 2 in flow mode");
+    ASSERT(snap.expectedChar == 'e', "expectedChar should be 'e' at index 2");
+    ASSERT(snap.incorrectFlags[1] == true, "index 1 should be flagged incorrect (flow mode advances on wrong key)");
+    ASSERT(snap.incorrectFlags[0] == false, "index 0 should not be flagged");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_snapshot_after_backspace(void) {
+    TEST("Snapshot: backspace clears incorrect flag in flow mode");
+    Engine* e = createTestEngine(FlowMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+    engineKeyPress(e, 'T');  /* correct, index 0 -> 1 */
+    engineKeyPress(e, 'X'); /* incorrect, index 1 -> 2 */
+    engineBackspacePress(e); /* undo index 2 -> 1, clears incorrect flag at 1 */
+
+    EngineSnapshot snap = engineGetSnapshot(e);
+    ASSERT(snap.cursorIndex == 1, "cursorIndex should be 1 after backspace");
+    ASSERT(snap.expectedChar == 'h', "expectedChar should be 'h' at index 1");
+    ASSERT(snap.incorrectFlags[1] == false, "index 1 should no longer be flagged after backspace");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_snapshot_after_completion(void) {
+    TEST("Snapshot: completed session has full text and zero expectedChar");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+
+    const char* text = "The quick brown fox jumps over the lazy dog.";
+    for (const char* p = text; *p; p++) {
+        engineKeyPress(e, *p);
+    }
+
+    ASSERT(engineIsCompleted(e), "should be completed");
+
+    EngineSnapshot snap = engineGetSnapshot(e);
+    ASSERT(snap.state == ENGINE_IDLE, "state should be IDLE after completion");
+    ASSERT(snap.stopCause == ENGINE_STOP_CAUSE_FINISHED, "stopCause should be FINISHED");
+    ASSERT(snap.cursorIndex == snap.length, "cursorIndex should equal length");
+    ASSERT(snap.expectedChar == '\0', "expectedChar should be NUL at end of text");
+    ASSERT(snap.stats.correctKeystrokes == snap.length, "all keystrokes correct");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_completion_copies_text(void) {
+    TEST("Snapshot: text is a standalone copy (modifying snapshot doesn't affect engine)");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+
+    EngineSnapshot snap = engineGetSnapshot(e);
+    /* Mutate the snapshot text */
+    snap.text[0] = 'Z';
+    snap.expectedChar = 'Q';
+
+    /* Engine should be unaffected */
+    EngineSnapshot snap2 = engineGetSnapshot(e);
+    ASSERT(snap2.text[0] == 'T', "engine text should be unchanged");
+    ASSERT(snap2.expectedChar == 'T', "engine expectedChar should be unchanged");
+
+    engineDestroy(e);
+    PASS();
+}
+
+/* ===== Segment completed signal tests ===== */
+
+static void on_segment(Engine* e, void* data) {
+    (void)e;
+    ((CallbackFlags*)data)->backspace = true;  /* reuse backspace flag as 'segment' indicator */
+    ((CallbackFlags*)data)->call_count++;
+}
+
+static void test_segment_completed_fires_on_finish(void) {
+    TEST("Signal: SEGMENT_COMPLETED fires on session finish");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    CallbackFlags flags;
+    reset_flags(&flags);
+
+    int slot = engineOnSegmentCompleted(e, on_segment, &flags);
+    ASSERT(slot >= 0, "registration should succeed");
+
+    engineStart(e);
+
+    const char* text = "The quick brown fox jumps over the lazy dog.";
+    for (const char* p = text; *p; p++) {
+        engineKeyPress(e, *p);
+    }
+
+    ASSERT(engineIsCompleted(e), "should be completed");
+    ASSERT(flags.backspace, "SEGMENT_COMPLETED callback should have fired on finish");
+    ASSERT(flags.call_count == 1, "callback should fire exactly once");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_segment_completed_not_on_user_stop(void) {
+    TEST("Signal: SEGMENT_COMPLETED does NOT fire on user stop");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    CallbackFlags flags;
+    reset_flags(&flags);
+
+    engineOnSegmentCompleted(e, on_segment, &flags);
+
+    engineStart(e);
+    engineKeyPress(e, 'T');
+    engineStop(e);
+
+    ASSERT(engineIsStopped(e), "should be stopped");
+    ASSERT(!flags.backspace, "SEGMENT_COMPLETED callback should NOT fire on user stop");
+    ASSERT(flags.call_count == 0, "callback should not fire");
+
+    engineDestroy(e);
+    PASS();
+}
+
 int main(void) {
     printf("=== ctypr Engine Test Suite ===\n\n");
     
@@ -1090,7 +1315,21 @@ int main(void) {
     test_stats_wpm();
     test_stats_before_start();
     test_stats_null_engine();
-    
+
+    /* EngineSnapshot */
+    test_snapshot_null_engine();
+    test_snapshot_before_start();
+    test_snapshot_after_start();
+    test_snapshot_progress_and_flags();
+    test_snapshot_flow_mode_incorrect_flags();
+    test_snapshot_after_backspace();
+    test_snapshot_after_completion();
+    test_completion_copies_text();
+
+    /* SEGMENT_COMPLETED signal */
+    test_segment_completed_fires_on_finish();
+    test_segment_completed_not_on_user_stop();
+
     test_error_already_running();
     test_error_not_running();
     test_error_to_string_all();

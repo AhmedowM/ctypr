@@ -179,11 +179,15 @@ static ContentChunk _cpGetFile(ContentProvider* cp) {
     }
 
     size_t total = 0;
-    size_t n;
+    size_t n = 0;
+    bool truncated = false;
     while (total < sizeof(cp->text) - 1 && (n = fread(cp->text + total, 1, sizeof(cp->text) - 1 - total, f)) > 0) {
         total += n;
+        if (total >= sizeof(cp->text) - 1) {
+            truncated = true;
+        }
     }
-    if (n > 0 && cp->logger) {
+    if (truncated && cp->logger) {
         loggerLog(cp->logger, LOG_LEVEL_WARNING, "File provider: file exceeds buffer, truncated to 4095 bytes");
     }
     cp->text[total] = '\0';
@@ -283,6 +287,10 @@ static ContentChunk _cpGetDatabase(ContentProvider* cp) {
         case CONTENT_MODE_SENTENCES:
             query = "SELECT text_content FROM typing_sentences LIMIT ?";
             break;
+        default:
+            if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "Database provider: unknown content mode, defaulting to sentences");
+            query = "SELECT text_content FROM typing_sentences LIMIT ?";
+            break;
     }
 
     sqlite3_stmt* stmt = NULL;
@@ -293,7 +301,13 @@ static ContentChunk _cpGetDatabase(ContentProvider* cp) {
         return c;
     }
 
-    sqlite3_bind_int64(stmt, 1, (int64_t)cp->contentLimit);
+    rc = sqlite3_bind_int64(stmt, 1, (int64_t)cp->contentLimit);
+    if (rc != SQLITE_OK) {
+        if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "Database provider: bind failed");
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return c;
+    }
 
     size_t offset = 0;
     while (sqlite3_step(stmt) == SQLITE_ROW) {

@@ -11,6 +11,7 @@ extern "C" {
 #include "ctypr/event.h"
 #include "ctypr/state.h"
 #include "ctypr/stats.h"
+#include "ctypr/snapshot.h"
 #include "ctypr/content.h"
 #include "ctypr/repository.h"
 #include "ctypr/logger.h"
