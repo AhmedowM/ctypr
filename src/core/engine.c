@@ -212,6 +212,18 @@ Engine* engineCreate(const EngineConfig* config) {
     engine->contentProvider = config->contentProvider;
     engine->autoSaveRepo = config->autoSaveRepo;
     engine->autoSaveEnabled = config->autoSaveEnabled;
+    signalInit(&engine->onStarted);
+    signalInit(&engine->onStopped);
+    signalInit(&engine->onPaused);
+    signalInit(&engine->onResumed);
+    signalInit(&engine->onTimeout);
+    signalInit(&engine->onFinished);
+    signalInit(&engine->onCorrectKeystroke);
+    signalInit(&engine->onIncorrectKeystroke);
+    signalInit(&engine->onBackspace);
+    signalInit(&engine->onSegmentCompleted);
+    signalInit(&engine->onError);
+
     engine->session = calloc(1, sizeof(Session));
     if (!engine->session) {
         fprintf(stderr, "[ERROR] Failed to allocate Engine session\n");
@@ -428,8 +440,10 @@ void engineBackspacePress_Flow(Engine *self) {
     if (self->session->currentIndex <= 0) return;
     self->session->currentIndex--;
     uint8_t *was_incorrect = &self->session->incorrectKeystrokesBitmap[self->session->currentIndex];
+    self->stats.totalKeystrokes--;
     if (*was_incorrect == 1) {
         *was_incorrect = 0;
+        self->stats.incorrectKeystrokes--;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: backspace over incorrect key");
     } else {
         self->stats.correctKeystrokes--;

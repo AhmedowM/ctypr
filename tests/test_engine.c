@@ -349,7 +349,7 @@ static void test_flow_backspace_correct(void) {
     engineBackspacePress(e);
     
     stats = engineGetStats(e);
-    ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should still be 2");
+    ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should be 1 after undoing a keystroke");
     ASSERT(stats.correctKeystrokes == 1, "correctKeystrokes should be 1 after undoing correct char");
     
     engineDestroy(e);
@@ -373,12 +373,12 @@ static void test_flow_backspace_incorrect(void) {
     engineBackspacePress(e);
     
     stats = engineGetStats(e);
-    ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should still be 1");
-    ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should still be 0");
+    ASSERT(stats.totalKeystrokes == 0, "totalKeystrokes should be 0 after undoing the only keystroke");
+    ASSERT(stats.incorrectKeystrokes == 0, "incorrectKeystrokes should be 0 after undoing incorrect key");
     
     engineKeyPress(e, 'T');
     stats = engineGetStats(e);
-    ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should be 2");
+    ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should be 1");
     ASSERT(stats.correctKeystrokes == 1, "correctKeystrokes should be 1");
     
     engineDestroy(e);
@@ -865,14 +865,14 @@ static void test_flow_backspace_retry(void) {
     
     engineBackspacePress(e);
     stats = engineGetStats(e);
-    ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should still be 1");
-    ASSERT(stats.correctKeystrokes == 0, "correctKeystrokes should still be 0");
+    ASSERT(stats.totalKeystrokes == 0, "totalKeystrokes should be 0 after undoing the only keystroke");
+    ASSERT(stats.incorrectKeystrokes == 0, "incorrectKeystrokes should be 0 after undoing incorrect key");
     
     engineKeyPress(e, 'T');
     stats = engineGetStats(e);
-    ASSERT(stats.totalKeystrokes == 2, "totalKeystrokes should be 2");
+    ASSERT(stats.totalKeystrokes == 1, "totalKeystrokes should be 1");
     ASSERT(stats.correctKeystrokes == 1, "correctKeystrokes should be 1");
-    ASSERT(stats.accuracy == 50.0, "accuracy should be 50.0");
+    ASSERT(stats.accuracy == 100.0, "accuracy should be 100.0 after correction");
     
     engineDestroy(e);
     PASS();

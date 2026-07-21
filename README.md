@@ -10,8 +10,10 @@ Most typing practice software is either a full GUI app or a quick online tool. T
 - **WPM, accuracy, and timing** — computes raw and adjusted WPM from actual elapsed wall-clock time
 - **Multiple content sources** — strings, files, or SQLite databases, with a formatter that splits text into sentence or word chunks
 - **SQLite persistence** — sessions save automatically on completion, timeout, or stop; query best WPM, recent sessions, averages
-- **Signal system** — per-event callbacks for started, stopped, finished, timeout, keystrokes, and backspace
+- **Signal system** — per-event callbacks for started, stopped, paused, resumed, finished, timeout, correct/incorrect keystrokes, backspace, and segment completed
+- **EngineSnapshot API** — atomic read of the full session state (text, cursor, incorrect flags, stats) for lock-free UI rendering
 - **Logger** — stdout and file output with configurable levels, useful for debugging without printf
+- **Doxygen API docs** — full documentation with automatic GitHub Pages deployment
 - **Zero server or network dependencies** — SQLite is fetched and built by CMake, everything else is standard C17
 
 ## Prerequisites
@@ -43,7 +45,7 @@ ctest --test-dir build --output-on-failure
 ```c
 #include "engine.h"
 #include "content.h"
-#include "stats.h"
+#include "snapshot.h"
 #include <stdio.h>
 
 int main(void) {
@@ -65,8 +67,8 @@ int main(void) {
         if (engineIsCompleted(e)) break;
     }
 
-    SessionStats s = engineGetStats(e);
-    printf("WPM: %.1f  Accuracy: %.1f%%\n", s.wpm, s.accuracy);
+    EngineSnapshot snap = engineGetSnapshot(e);
+    printf("WPM: %.1f  Accuracy: %.1f%%\n", snap.stats.wpm, snap.stats.accuracy);
 
     engineDestroy(e);
     contentProviderDestroy(cp);
@@ -76,17 +78,11 @@ int main(void) {
 
 ## Current status
 
-ctypr is functionally complete for basic typing sessions. The core engine, content providers (string, file, database), formatter, SQLite persistence, signal system, and logger are all implemented and tested (91 tests across 5 suites).
-
-**What's left:**
-- Full API documentation with Doxygen
-- Type-safe disconnect tokens for the signal system
-- A working web content provider (currently falls back to a default string)
-- CMake install/packaging polish
+ctypr is functionally complete for basic typing sessions. The core engine, content providers (string, file, database), formatter, SQLite persistence, signal system, EngineSnapshot API, and logger are all implemented and tested (100+ tests across 5 suites).
 
 ## API reference
 
-### Engine
+### Engine lifecycle
 
 ```c
 Engine* engineCreate(const EngineConfig* config);
@@ -95,17 +91,31 @@ void engineDestroy(Engine* self);
 void engineSetLogger(Engine* self, Logger* logger);
 void engineSetContentProvider(Engine* self, ContentProvider* provider);
 void engineSetAutoSave(Engine* self, Repository* repo, bool enabled);
+```
 
+### Mode and timeout
+
+```c
 void engineSetMode(Engine* self, EngineMode mode);
 EngineMode engineGetMode(Engine* self);
 void engineSetTimeout(Engine* self, uint16_t timeout);
 uint16_t engineGetTimeout(Engine* self);
+```
 
+### Session control
+
+```c
 void engineStart(Engine* self);
 void engineStop(Engine* self);
 void enginePause(Engine* self);
 void engineResume(Engine* self);
 void engineReset(Engine* self);
+```
+
+### State queries
+
+```c
+EngineStateInfo engineGetStateInfo(Engine* engine);
 
 bool engineIsRunning(Engine* self);
 bool engineIsPaused(Engine* self);
@@ -115,9 +125,13 @@ bool engineIsCompleted(Engine* self);
 bool engineIsTimedOut(Engine* self);
 bool engineIsStopped(Engine* self);
 bool engineWasStopped(Engine* self);
+```
 
+### Keystroke processing
+
+```c
 void engineKeyPress(Engine* self, char key);
-void engineBackspacePress(Engine* self);
+void engineBackspacePress(Engine* self);  // flow mode only
 ```
 
 ### EngineConfig
@@ -130,6 +144,22 @@ typedef struct EngineConfig {
     Repository* autoSaveRepo;         // optional, NULL to disable auto-save
     bool autoSaveEnabled;
 } EngineConfig;
+```
+
+### Snapshot
+
+```c
+EngineSnapshot engineGetSnapshot(Engine* engine);
+
+// EngineSnapshot fields:
+//   char text[4096]               session text
+//   size_t length                 text length
+//   uint32_t cursorIndex          current cursor position
+//   char expectedChar             character at cursor (NUL if done)
+//   bool incorrectFlags[4096]     per-position incorrect flag
+//   SessionStats stats            see Stats section below
+//   EngineState state             IDLE, RUNNING, PAUSED, ERROR
+//   EngineStopCause stopCause     NONE, TIMEOUT, FINISHED, USER, ERROR
 ```
 
 ### Stats
@@ -148,14 +178,23 @@ SessionStats engineGetStats(Engine* engine);
 //   double wpmRaw            raw keystrokes / 5 / minutes
 ```
 
-### State info
+### Signals
 
 ```c
-EngineStateInfo engineGetStateInfo(Engine* engine);
+int engineOnStarted(Engine* engine, EngineCallback cb, void* data);
+int engineOnStopped(Engine* engine, EngineCallback cb, void* data);
+int engineOnFinished(Engine* engine, EngineCallback cb, void* data);
+int engineOnTimeout(Engine* engine, EngineCallback cb, void* data);
+int engineOnPaused(Engine* engine, EngineCallback cb, void* data);
+int engineOnResumed(Engine* engine, EngineCallback cb, void* data);
+int engineOnCorrectKeystroke(Engine* engine, EngineCallback cb, void* data);
+int engineOnIncorrectKeystroke(Engine* engine, EngineCallback cb, void* data);
+int engineOnBackspace(Engine* engine, EngineCallback cb, void* data);
+int engineOnSegmentCompleted(Engine* engine, EngineCallback cb, void* data);
+int engineOnError(Engine* engine, EngineCallback cb, void* data);
 
-// EngineStateInfo fields:
-//   EngineState state         IDLE, RUNNING, PAUSED, ERROR
-//   EngineStopCause stopCause NONE, TIMEOUT, FINISHED, USER, ERROR
+void engineDisconnect(Engine* engine, EngineEvent event, int slotId);
+void engineClearEvent(Engine* engine, EngineEvent event);
 ```
 
 ### Content providers
@@ -175,23 +214,6 @@ void contentProviderSetLogger(ContentProvider* self, Logger* logger);
 ContentChunk contentProviderGetNext(ContentProvider* provider);
 bool contentProviderIsExhausted(ContentProvider* provider);
 void contentProviderReset(ContentProvider* provider);
-```
-
-### Signals
-
-```c
-int engineOnStarted(Engine* engine, EngineCallback cb, void* data);
-int engineOnStopped(Engine* engine, EngineCallback cb, void* data);
-int engineOnFinished(Engine* engine, EngineCallback cb, void* data);
-int engineOnTimeout(Engine* engine, EngineCallback cb, void* data);
-int engineOnPaused(Engine* engine, EngineCallback cb, void* data);
-int engineOnResumed(Engine* engine, EngineCallback cb, void* data);
-int engineOnCorrectKeystroke(Engine* engine, EngineCallback cb, void* data);
-int engineOnIncorrectKeystroke(Engine* engine, EngineCallback cb, void* data);
-int engineOnBackspace(Engine* engine, EngineCallback cb, void* data);
-
-void engineDisconnect(Engine* engine, EngineEvent event, int slotId);
-void engineClearEvent(Engine* engine, EngineEvent event);
 ```
 
 ### Repository (SQLite session storage)
@@ -216,13 +238,13 @@ double repositoryGetAverageWpm(Repository* repo);
 ### Logger
 
 ```c
-Logger* loggerCreate(LogLevel level, bool useStdout);
+Logger* loggerCreate(LogLevel level, bool enableStdout);
 void loggerDestroy(Logger* logger);
 void loggerSetLevel(Logger* logger, LogLevel level);
 LogLevel loggerGetLevel(Logger* logger);
 void loggerLog(Logger* logger, LogLevel level, const char* message);
 bool loggerAddFile(Logger* logger, const char* filepath);
-void loggerSetStdout(Logger* logger, bool enable);
+void loggerLogToStdout(Logger* logger, bool enable);
 ```
 
 ### Formatter
@@ -233,6 +255,17 @@ void formatterDestroy(Formatter* formatter);
 void formatterSetLogger(Formatter* self, Logger* logger);
 void formatterReset(Formatter* self);
 ContentChunk formatterFormat(Formatter* self, const char* text, size_t maxChunkSize);
+```
+
+### Version macros
+
+```c
+#include "version.h"
+
+// CTYPR_VERSION_MAJOR  (e.g. 1)
+// CTYPR_VERSION_MINOR  (e.g. 1)
+// CTYPR_VERSION_PATCH  (e.g. 0)
+// CTYPR_VERSION_STRING (e.g. "1.1.0")
 ```
 
 ### Error and event string helpers
@@ -246,7 +279,7 @@ void engineEventToString(EngineEvent event, char* buffer, size_t bufferSize);
 
 ```
 src/
-  core/     engine, state machine, stats, signals, error codes, version
+  core/     engine, state machine, stats, snapshot, signals, error codes, version
   content/  string, file, database, and web content providers
   format/   text chunking / formatter
   db/       SQLite persistence layer
