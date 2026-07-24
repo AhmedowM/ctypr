@@ -961,6 +961,28 @@ static void test_timeout_pause_does_not_accumulate(void) {
     PASS();
 }
 
+static void test_engine_tick(void) {
+    TEST("Engine: engineTick manually advances time");
+    Engine* e = createTestEngine(StrictMode, 1);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+    
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+    
+#ifdef _WIN32
+    Sleep(1100);
+#else
+    struct timespec ts = {1, 100000000L};
+    nanosleep(&ts, NULL);
+#endif
+
+    engineTick(e);
+    ASSERT(engineIsTimedOut(e), "should be timed out after engineTick");
+    
+    engineDestroy(e);
+    PASS();
+}
+
 static void test_timeout_backspace_checks_timeout(void) {
     TEST("Timeout: backspace also triggers timeout check");
     Engine* e = createTestEngine(FlowMode, 1);
@@ -1344,6 +1366,7 @@ int main(void) {
     test_timeout_triggers();
     test_timeout_zero_disabled();
     test_timeout_pause_does_not_accumulate();
+    test_engine_tick();
     test_timeout_backspace_checks_timeout();
     test_auto_save_session();
     

@@ -163,6 +163,11 @@ void engineKeyPress(Engine* self, char key);
 /// @param self The Engine instance.
 void engineBackspacePress(Engine* self);
 
+/// @brief Manually update the engine's internal session timer and check for timeout.
+///        Useful for driving the engine in game loops without keystrokes.
+/// @param self The Engine instance.
+void engineTick(Engine* self);
+
 #ifdef __cplusplus
 }
 #endif

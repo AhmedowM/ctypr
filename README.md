@@ -132,6 +132,7 @@ bool engineWasStopped(Engine* self);
 ```c
 void engineKeyPress(Engine* self, char key);
 void engineBackspacePress(Engine* self);  // flow mode only
+void engineTick(Engine* self);
 ```
 
 ### EngineConfig

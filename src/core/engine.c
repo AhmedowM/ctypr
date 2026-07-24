@@ -461,6 +461,12 @@ void engineBackspacePress(Engine *self) {
     }
 }
 
+void engineTick(Engine* self) {
+    if (!self || self->state != ENGINE_RUNNING) return;
+    updateTime(self->session);
+    checkTimeout(self);
+}
+
 // callback.h — per-event registration
 
 int engineOnStarted(Engine* engine, EngineCallback callback, void* userData) {
