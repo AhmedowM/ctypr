@@ -31,18 +31,11 @@ def make_word_db(path):
         os.remove(path)
     db = sqlite3.connect(path)
     db.execute("""
-        CREATE TABLE IF NOT EXISTS common_words (
+        CREATE TABLE IF NOT EXISTS words (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             word TEXT NOT NULL UNIQUE,
             word_length INTEGER NOT NULL,
-            frequency_rank INTEGER NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS random_words (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            word TEXT NOT NULL UNIQUE,
-            word_length INTEGER NOT NULL,
+            frequency_rank INTEGER NOT NULL,
             difficulty_rating REAL DEFAULT 1.0
         )
     """)
@@ -83,9 +76,7 @@ def insert_words(db, filepath):
 
     rows.sort(key=lambda r: r.get("frequency_rank", 999999))
 
-    common_count = 0
-    random_count = 0
-
+    count = 0
     for row in rows:
         word = row.get("word", "")
         word_len = row.get("length", len(word))
@@ -94,24 +85,15 @@ def insert_words(db, filepath):
 
         try:
             db.execute(
-                "INSERT INTO common_words (word, word_length, frequency_rank) VALUES (?, ?, ?)",
-                (word, word_len, freq),
+                "INSERT INTO words (word, word_length, frequency_rank, difficulty_rating) VALUES (?, ?, ?, ?)",
+                (word, word_len, freq, diff),
             )
-            common_count += 1
-        except sqlite3.IntegrityError:
-            pass
-
-        try:
-            db.execute(
-                "INSERT INTO random_words (word, word_length, difficulty_rating) VALUES (?, ?, ?)",
-                (word, word_len, diff),
-            )
-            random_count += 1
+            count += 1
         except sqlite3.IntegrityError:
             pass
 
     db.commit()
-    return common_count, random_count
+    return count
 
 
 def main():
@@ -137,13 +119,12 @@ def main():
 
     if args.words:
         db = make_word_db(args.words_db)
-        common_count, random_count = insert_words(db, args.words)
+        word_count = insert_words(db, args.words)
         db.execute("VACUUM")
         db.close()
         size = os.path.getsize(args.words_db)
         print(f"[INFO] Built: {args.words_db}")
-        print(f"  common_words:     {common_count} rows")
-        print(f"  random_words:     {random_count} rows")
+        print(f"  words:            {word_count} rows")
         print(f"  file size:        {size:,} bytes ({size / 1024:.1f} KB)")
 
 

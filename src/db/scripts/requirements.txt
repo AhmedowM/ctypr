@@ -1,1 +1,4 @@
 feedparser>=6.0
+# wordfreq (optional) — provides real word frequency data for accurate common_words ranking
+# Install: pip install wordfreq
+# Without it, words.py downloads a pre-built frequency list as fallback.
