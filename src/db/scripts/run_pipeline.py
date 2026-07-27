@@ -14,11 +14,14 @@ PIPE_DIR = os.path.join(SCRIPTS, "build_cache")
 SENTENCES_DIR = os.path.join(PIPE_DIR, "fetch_sentences")
 
 
+DEFAULT_TIMEOUT = 300
+
+
 def log(msg):
     print(f"[pipeline] {msg}", file=sys.stderr)
 
 
-def run(cmd, desc, timeout=120):
+def run(cmd, desc, timeout=DEFAULT_TIMEOUT):
     log(f"{desc}...")
     t0 = time.time()
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -88,7 +91,7 @@ def run_pipeline(args):
 
         # Network fetchers (skipped with --no-fetch)
         if not args.no_fetch:
-            for script, label in [("quotable.py", "quotable"), ("wikipedia.py", "wikipedia"), ("news.py", "news")]:
+            for script, label in [("dummyjson.py", "dummyjson"), ("wikipedia.py", "wikipedia"), ("news.py", "news")]:
                 out = fetch_source(script, [], label)
                 parts.append(out)
                 if out:
@@ -246,7 +249,7 @@ def run_pipeline(args):
             os.unlink(f.name)
 
 
-def run_with_input(cmd, desc, timeout=120, input_data=None):
+def run_with_input(cmd, desc, timeout=DEFAULT_TIMEOUT, input_data=None):
     """Like run() but accepts stdin data."""
     log(f"{desc}...")
     t0 = time.time()
@@ -276,7 +279,7 @@ def run_with_input(cmd, desc, timeout=120, input_data=None):
 _orig_run = run
 
 
-def run(cmd, desc, timeout=120, input_data=None):
+def run(cmd, desc, timeout=DEFAULT_TIMEOUT, input_data=None):
     if input_data is not None:
         return run_with_input(cmd, desc, timeout, input_data)
     return _orig_run(cmd, desc, timeout)
@@ -321,7 +324,7 @@ def main():
     parser.add_argument(
         "--no-fetch",
         action="store_true",
-        help="Skip network fetchers (quotable, wikipedia, news); local files via --files still work",
+        help="Skip network fetchers (dummyjson, wikipedia, news); local files via --files still work",
     )
     parser.add_argument(
         "--sentences-only",

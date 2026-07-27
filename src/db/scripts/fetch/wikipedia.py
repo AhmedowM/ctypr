@@ -14,6 +14,8 @@ BATCH_SIZE = 10
 ITERATIONS = 500
 MIN_SENTENCE_LEN = 30
 DELAY = 1.0
+RETRIES = 3
+BASE_TIMEOUT = 30
 USER_AGENT = "ctypr-content-builder/1.0"
 
 
@@ -30,12 +32,20 @@ def fetch_random_extracts(count):
     )
     url = f"{API_URL}?{params}"
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
-    except (urllib.error.URLError, json.JSONDecodeError) as e:
-        print(f"[ERROR] Wikipedia: {e}", file=sys.stderr)
-        return []
+    data = None
+    for attempt in range(1, RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=BASE_TIMEOUT) as resp:
+                data = json.loads(resp.read())
+                break
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError) as e:
+            if attempt < RETRIES:
+                wait = 2 ** attempt
+                print(f"[WARN] Wikipedia attempt {attempt}/{RETRIES} failed: {e} — retrying in {wait}s", file=sys.stderr)
+                time.sleep(wait)
+            else:
+                print(f"[ERROR] Wikipedia failed after {RETRIES} retries: {e}", file=sys.stderr)
+                return []
     pages = data.get("query", {}).get("pages", {}).values()
     extracts = []
     for page in pages:

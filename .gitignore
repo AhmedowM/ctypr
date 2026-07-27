@@ -2,6 +2,7 @@ build
 .cache
 roadmap.md
 plan.md
+script.md
 # Python
 __pycache__/
 *.pyc
