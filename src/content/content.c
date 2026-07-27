@@ -31,6 +31,10 @@ typedef struct ContentProvider {
     ContentMode mode;
     size_t contentLimit;
     bool contentFetched;
+
+    char* difficultyFilter;
+    size_t minWordLength;
+    size_t maxWordLength;
 } ContentProvider;
 
 ContentProvider* contentProviderFromString(const char* text) {
@@ -51,6 +55,9 @@ ContentProvider* contentProviderFromString(const char* text) {
     cp->mode = CONTENT_MODE_SENTENCES;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
     cp->contentFetched = false;
+    cp->difficultyFilter = NULL;
+    cp->minWordLength = 0;
+    cp->maxWordLength = 0;
     return cp;
 }
 
@@ -78,6 +85,9 @@ ContentProvider* contentProviderFromFile(const char* filepath) {
     cp->mode = CONTENT_MODE_SENTENCES;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
     cp->contentFetched = false;
+    cp->difficultyFilter = NULL;
+    cp->minWordLength = 0;
+    cp->maxWordLength = 0;
     return cp;
 }
 
@@ -105,6 +115,9 @@ ContentProvider* contentProviderFromDatabase(const char* filepath) {
     cp->mode = CONTENT_MODE_COMMON_WORDS;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
     cp->contentFetched = false;
+    cp->difficultyFilter = NULL;
+    cp->minWordLength = 0;
+    cp->maxWordLength = 0;
     return cp;
 }
 
@@ -132,6 +145,9 @@ ContentProvider* contentProviderFromWeb(const char* url) {
     cp->mode = CONTENT_MODE_SENTENCES;
     cp->contentLimit = CONTENT_DB_DEFAULT_LIMIT;
     cp->contentFetched = false;
+    cp->difficultyFilter = NULL;
+    cp->minWordLength = 0;
+    cp->maxWordLength = 0;
     return cp;
 }
 
@@ -147,11 +163,31 @@ void contentProviderSetContentLimit(ContentProvider* self, size_t limit) {
     if (self) self->contentLimit = limit;
 }
 
+void contentProviderSetDifficultyFilter(ContentProvider* self, const char* difficulty) {
+    if (self) {
+        free(self->difficultyFilter);
+        self->difficultyFilter = difficulty ? strdup(difficulty) : NULL;
+    }
+}
+
+void contentProviderSetWordLengthRange(ContentProvider* self, size_t min_len, size_t max_len) {
+    if (self) {
+        if (min_len > max_len && max_len > 0) {
+            size_t tmp = min_len;
+            min_len = max_len;
+            max_len = tmp;
+        }
+        self->minWordLength = min_len;
+        self->maxWordLength = max_len;
+    }
+}
+
 void contentProviderDestroy(ContentProvider* provider) {
     if (provider) {
         if (provider->logger) loggerLog(provider->logger, LOG_LEVEL_DEBUG, "ContentProvider destroyed");
         free(provider->filepath);
         free(provider->url);
+        free(provider->difficultyFilter);
         free(provider);
     }
 }
@@ -276,22 +312,42 @@ static ContentChunk _cpGetDatabase(ContentProvider* cp) {
         return c;
     }
 
-    const char* query = NULL;
-    switch (cp->mode) {
-        case CONTENT_MODE_COMMON_WORDS:
-            query = "SELECT word FROM common_words ORDER BY frequency_rank ASC LIMIT ?";
-            break;
-        case CONTENT_MODE_RANDOM_WORDS:
-            query = "SELECT word FROM random_words ORDER BY RANDOM() LIMIT ?";
-            break;
-        case CONTENT_MODE_SENTENCES:
-            query = "SELECT text_content FROM typing_sentences LIMIT ?";
-            break;
-        default:
-            if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "Database provider: unknown content mode, defaulting to sentences");
-            query = "SELECT text_content FROM typing_sentences LIMIT ?";
-            break;
+    char query[512];
+    char whereClause[128] = "";
+    int filterParams = 0;
+
+    if (cp->mode == CONTENT_MODE_SENTENCES && cp->difficultyFilter) {
+        snprintf(whereClause, sizeof(whereClause), " WHERE difficulty_category = ?");
+        filterParams = 1;
+    } else if ((cp->mode == CONTENT_MODE_COMMON_WORDS || cp->mode == CONTENT_MODE_RANDOM_WORDS)
+               && (cp->minWordLength > 0 || cp->maxWordLength > 0)) {
+        if (cp->minWordLength > 0 && cp->maxWordLength > 0) {
+            snprintf(whereClause, sizeof(whereClause), " WHERE word_length BETWEEN ? AND ?");
+            filterParams = 2;
+        } else if (cp->minWordLength > 0) {
+            snprintf(whereClause, sizeof(whereClause), " WHERE word_length >= ?");
+            filterParams = 1;
+        } else {
+            snprintf(whereClause, sizeof(whereClause), " WHERE word_length <= ?");
+            filterParams = 1;
+        }
     }
+
+    const char* select = "SELECT text_content";
+    const char* from = " FROM typing_sentences";
+    const char* order = "";
+
+    if (cp->mode == CONTENT_MODE_COMMON_WORDS) {
+        select = "SELECT word";
+        from = " FROM words";
+        order = " ORDER BY frequency_rank ASC";
+    } else if (cp->mode == CONTENT_MODE_RANDOM_WORDS) {
+        select = "SELECT word";
+        from = " FROM words";
+        order = " ORDER BY RANDOM()";
+    }
+
+    snprintf(query, sizeof(query), "%s%s%s%s LIMIT ?", select, from, whereClause, order);
 
     sqlite3_stmt* stmt = NULL;
     rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
@@ -301,13 +357,22 @@ static ContentChunk _cpGetDatabase(ContentProvider* cp) {
         return c;
     }
 
-    rc = sqlite3_bind_int64(stmt, 1, (int64_t)cp->contentLimit);
-    if (rc != SQLITE_OK) {
-        if (cp->logger) loggerLog(cp->logger, LOG_LEVEL_WARNING, "Database provider: bind failed");
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return c;
+    int bindIdx = 1;
+
+    if (filterParams == 2) {
+        sqlite3_bind_int64(stmt, bindIdx++, (int64_t)cp->minWordLength);
+        sqlite3_bind_int64(stmt, bindIdx++, (int64_t)cp->maxWordLength);
+    } else if (filterParams == 1) {
+        if (cp->difficultyFilter) {
+            sqlite3_bind_text(stmt, bindIdx++, cp->difficultyFilter, -1, SQLITE_STATIC);
+        } else if (cp->minWordLength > 0) {
+            sqlite3_bind_int64(stmt, bindIdx++, (int64_t)cp->minWordLength);
+        } else if (cp->maxWordLength > 0) {
+            sqlite3_bind_int64(stmt, bindIdx++, (int64_t)cp->maxWordLength);
+        }
     }
+
+    sqlite3_bind_int64(stmt, bindIdx, (int64_t)cp->contentLimit);
 
     size_t offset = 0;
     while (sqlite3_step(stmt) == SQLITE_ROW) {

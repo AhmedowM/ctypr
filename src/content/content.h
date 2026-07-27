@@ -72,6 +72,19 @@ void contentProviderSetMode(ContentProvider* self, ContentMode mode);
 /// @param limit Maximum rows per query (default 300).
 void contentProviderSetContentLimit(ContentProvider* self, size_t limit);
 
+/// @brief Set difficulty filter for sentence queries (CONTENT_MODE_SENTENCES only).
+///        Pass NULL to clear the filter.
+/// @param self       ContentProvider instance.
+/// @param difficulty Difficulty category ("Easy", "Normal", "Hard", "Expert") or NULL.
+void contentProviderSetDifficultyFilter(ContentProvider* self, const char* difficulty);
+
+/// @brief Set word length range filter for word queries (COMMON_WORDS / RANDOM_WORDS).
+///        Pass both as 0 to clear the filter.
+/// @param self    ContentProvider instance.
+/// @param min_len Minimum word length (inclusive). 0 = no minimum.
+/// @param max_len Maximum word length (inclusive). 0 = no maximum.
+void contentProviderSetWordLengthRange(ContentProvider* self, size_t min_len, size_t max_len);
+
 // ── Content Access ───────────────────────────────────────────────────────────
 
 /// @brief Get the next content chunk.
