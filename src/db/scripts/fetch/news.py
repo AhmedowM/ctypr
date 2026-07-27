@@ -9,8 +9,8 @@ import time
 
 FEEDS = [
     ("BBC News", "https://feeds.bbci.co.uk/news/rss.xml"),
-    ("NPR", "https://www.npr.org/rss/rss.php"),
-    ("The Economist", "https://www.economist.com/feeds/print-sections/77/business.xml"),
+    ("NPR", "https://feeds.npr.org/1001/rss.xml"),
+    ("NYT World", "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"),
 ]
 
 CACHE_DIR = ".feed_cache"
@@ -81,8 +81,8 @@ def main():
 
         feed_count = 0
         for entry in entries:
-            title = getattr(entry, "title", "") or ""
-            desc = getattr(entry, "description", "") or ""
+            title = entry.get("title", "") or ""
+            desc = entry.get("description", "") or ""
 
             texts = [title] + split_sentences(desc)
             for text in texts:
