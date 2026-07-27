@@ -2,3 +2,10 @@ build
 .cache
 roadmap.md
 plan.md
+# Python
+__pycache__/
+*.pyc
+# Feed cache
+.feed_cache/
+# Content DB
+content.db

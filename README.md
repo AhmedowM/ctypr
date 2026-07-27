@@ -1,38 +1,26 @@
 # ctypr
 
-A small C library that simulates typing sessions and measures your speed and accuracy — useful for building typing tutors, CLI games, or keyboard training tools.
+A C library for typing sessions. It tracks speed, accuracy, and timing — embed it in tutors, CLI tools, or games.
 
-## Why this exists
+## What it does
 
-Most typing practice software is either a full GUI app or a quick online tool. There isn't much out there if you want to embed typing logic into your own program. ctypr gives you a clean, reusable C library that handles the session state machine, keystroke processing, timing, and persistence, so you can focus on the UI.
+- **Two modes**: strict (blocks on wrong keys) or flow (advances anyway, supports backspace)
+- **Stats**: WPM (raw and accuracy-adjusted), keystroke counts, elapsed time
+- **Content from anywhere**: strings, files, SQLite databases, or web URLs
+- **Auto-save**: sessions persist to SQLite on finish, timeout, or manual stop
+- **Callbacks**: hook into started, stopped, keystrokes, backspace, timeout, segment done
+- **Snapshot**: one call gets the full session state for rendering
+- **Logger**: stdout or file, configurable levels
+- **Zero deps beyond C17**: SQLite downloads and builds via CMake
 
-- **Two typing modes** — strict mode locks you until you hit the right key; flow mode keeps advancing and lets you backspace
-- **WPM, accuracy, and timing** — computes raw and adjusted WPM from actual elapsed wall-clock time
-- **Multiple content sources** — strings, files, or SQLite databases, with a formatter that splits text into sentence or word chunks
-- **SQLite persistence** — sessions save automatically on completion, timeout, or stop; query best WPM, recent sessions, averages
-- **Signal system** — per-event callbacks for started, stopped, paused, resumed, finished, timeout, correct/incorrect keystrokes, backspace, and segment completed
-- **EngineSnapshot API** — atomic read of the full session state (text, cursor, incorrect flags, stats) for lock-free UI rendering
-- **Logger** — stdout and file output with configurable levels, useful for debugging without printf
-- **Doxygen API docs** — full documentation with automatic GitHub Pages deployment
-- **Zero server or network dependencies** — SQLite is fetched and built by CMake, everything else is standard C17
-
-## Prerequisites
-
-- **CMake >= 3.25**
-- A **C17 compiler** (GCC, Clang, MSVC — all work)
-- Windows, macOS, or Linux
-- An internet connection on first build (CMake downloads SQLite automatically)
-
-## Building
+## Build
 
 ```sh
-git clone https://github.com/AhmedowM/ctypr.git
-cd ctypr
 cmake -B build
 cmake --build build
 ```
 
-Tests and the usage example are built by default:
+Tests and examples build by default:
 
 ```sh
 cmake -B build -DBUILD_TESTING=ON -DBUILD_EXAMPLES=ON
@@ -40,7 +28,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-## A minimal example
+## Minimal example
 
 ```c
 #include "engine.h"
@@ -76,13 +64,9 @@ int main(void) {
 }
 ```
 
-## Current status
+## API
 
-ctypr is functionally complete for basic typing sessions. The core engine, content providers (string, file, database), formatter, SQLite persistence, signal system, EngineSnapshot API, and logger are all implemented and tested (100+ tests across 5 suites).
-
-## API reference
-
-### Engine lifecycle
+### Engine
 
 ```c
 Engine* engineCreate(const EngineConfig* config);
@@ -93,7 +77,7 @@ void engineSetContentProvider(Engine* self, ContentProvider* provider);
 void engineSetAutoSave(Engine* self, Repository* repo, bool enabled);
 ```
 
-### Mode and timeout
+### Mode & timeout
 
 ```c
 void engineSetMode(Engine* self, EngineMode mode);
@@ -110,13 +94,13 @@ void engineStop(Engine* self);
 void enginePause(Engine* self);
 void engineResume(Engine* self);
 void engineReset(Engine* self);
+void engineTick(Engine* self);  // advance timer manually (game loops)
 ```
 
 ### State queries
 
 ```c
 EngineStateInfo engineGetStateInfo(Engine* engine);
-
 bool engineIsRunning(Engine* self);
 bool engineIsPaused(Engine* self);
 bool engineIsIdle(Engine* self);
@@ -127,22 +111,21 @@ bool engineIsStopped(Engine* self);
 bool engineWasStopped(Engine* self);
 ```
 
-### Keystroke processing
+### Keystrokes
 
 ```c
 void engineKeyPress(Engine* self, char key);
 void engineBackspacePress(Engine* self);  // flow mode only
-void engineTick(Engine* self);
 ```
 
-### EngineConfig
+### Config
 
 ```c
 typedef struct EngineConfig {
     EngineMode mode;                  // StrictMode or FlowMode (required)
     uint16_t timeout;                 // seconds, 0 = no limit
-    ContentProvider* contentProvider; // required, engineCreate fails if NULL
-    Repository* autoSaveRepo;         // optional, NULL to disable auto-save
+    ContentProvider* contentProvider; // required
+    Repository* autoSaveRepo;         // optional
     bool autoSaveEnabled;
 } EngineConfig;
 ```
@@ -151,32 +134,18 @@ typedef struct EngineConfig {
 
 ```c
 EngineSnapshot engineGetSnapshot(Engine* engine);
-
-// EngineSnapshot fields:
-//   char text[4096]               session text
-//   size_t length                 text length
-//   uint32_t cursorIndex          current cursor position
-//   char expectedChar             character at cursor (NUL if done)
-//   bool incorrectFlags[4096]     per-position incorrect flag
-//   SessionStats stats            see Stats section below
-//   EngineState state             IDLE, RUNNING, PAUSED, ERROR
-//   EngineStopCause stopCause     NONE, TIMEOUT, FINISHED, USER, ERROR
+// Fields: text[4096], length, cursorIndex, expectedChar,
+//         incorrectFlags[4096], stats (see below),
+//         state, stopCause
 ```
 
 ### Stats
 
 ```c
 SessionStats engineGetStats(Engine* engine);
-
-// SessionStats fields:
-//   char timestamp[20]       ISO 8601 snapshot time
-//   int64_t durationMs       elapsed wall-clock time
-//   uint32_t correctKeystrokes
-//   uint32_t incorrectKeystrokes
-//   uint32_t totalKeystrokes
-//   double accuracy          percentage
-//   double wpm               adjusted for accuracy
-//   double wpmRaw            raw keystrokes / 5 / minutes
+// Fields: timestamp[20], durationMs,
+//         correctKeystrokes, incorrectKeystrokes, totalKeystrokes,
+//         accuracy, wpm, wpmRaw
 ```
 
 ### Signals
@@ -208,7 +177,7 @@ ContentProvider* contentProviderFromWeb(const char* url);
 void contentProviderDestroy(ContentProvider* provider);
 
 void contentProviderSetMode(ContentProvider* self, ContentMode mode);
-// Modes: CONTENT_MODE_SENTENCES, CONTENT_MODE_COMMON_WORDS, CONTENT_MODE_RANDOM_WORDS
+// CONTENT_MODE_SENTENCES, CONTENT_MODE_COMMON_WORDS, CONTENT_MODE_RANDOM_WORDS
 
 void contentProviderSetContentLimit(ContentProvider* self, size_t limit);
 void contentProviderSetLogger(ContentProvider* self, Logger* logger);
@@ -217,7 +186,7 @@ bool contentProviderIsExhausted(ContentProvider* provider);
 void contentProviderReset(ContentProvider* provider);
 ```
 
-### Repository (SQLite session storage)
+### Repository (SQLite)
 
 ```c
 Repository* repositoryCreate(const char* dbPath);
@@ -258,44 +227,41 @@ void formatterReset(Formatter* self);
 ContentChunk formatterFormat(Formatter* self, const char* text, size_t maxChunkSize);
 ```
 
-### Version macros
+### Version
 
 ```c
 #include "version.h"
-
-// CTYPR_VERSION_MAJOR  (e.g. 1)
-// CTYPR_VERSION_MINOR  (e.g. 1)
-// CTYPR_VERSION_PATCH  (e.g. 0)
-// CTYPR_VERSION_STRING (e.g. "1.1.0")
+// CTYPR_VERSION_MAJOR, CTYPR_VERSION_MINOR, CTYPR_VERSION_PATCH
+// CTYPR_VERSION_STRING
 ```
 
-### Error and event string helpers
+### Helpers
 
 ```c
 void engineErrorToString(EngineError error, char* buffer, size_t bufferSize);
 void engineEventToString(EngineEvent event, char* buffer, size_t bufferSize);
 ```
 
-## Project structure
+## Layout
 
 ```
 src/
-  core/     engine, state machine, stats, snapshot, signals, error codes, version
-  content/  string, file, database, and web content providers
-  format/   text chunking / formatter
-  db/       SQLite persistence layer
+  core/     engine, state, stats, snapshot, signals, errors, version
+  content/  string, file, database, web providers
+  format/   text chunking
+  db/       SQLite layer
   utils/    logger
-tests/       5 suites: test_engine, test_content, test_formatter, test_repository, test_logger
-examples/    usage.c — walks through every major API
+tests/      5 suites (engine, content, formatter, repository, logger)
+examples/   usage.c — full API walkthrough
 ```
 
-## Running the tests
+## Run tests
 
 ```sh
 ctest --test-dir build --output-on-failure
 ```
 
-Or run a specific one:
+Or individually:
 
 ```sh
 ./build/tests/test_engine

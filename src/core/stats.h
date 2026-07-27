@@ -9,22 +9,21 @@ extern "C" {
 
 typedef struct Engine Engine;
 
-/// @brief Session statistics populated by engineGetStats.
+/// @brief Session statistics from engineGetStats.
 typedef struct {
-    char timestamp[20];           ///< ISO 8601 timestamp (YYYY-MM-DD HH:MM:SS) of the stats snapshot
+    char timestamp[20];           ///< ISO 8601 snapshot time (YYYY-MM-DD HH:MM:SS)
     int64_t durationMs;           ///< Elapsed session time in milliseconds
-    uint32_t correctKeystrokes;   ///< Number of correctly pressed keys
-    uint32_t incorrectKeystrokes; ///< Number of incorrectly pressed keys
-    uint32_t totalKeystrokes;     ///< Total number of keystrokes (including incorrect and correct)
+    uint32_t correctKeystrokes;   ///< Correctly pressed keys
+    uint32_t incorrectKeystrokes; ///< Incorrectly pressed keys
+    uint32_t totalKeystrokes;     ///< Total keystrokes (correct + incorrect)
     double accuracy;              ///< Accuracy percentage (correct / total * 100)
-    double wpm;                   ///< Words per minute adjusted by accuracy (wpmRaw * accuracy / 100)
-    double wpmRaw;                ///< Raw words per minute (currentIndex / 5 / minutes)
+    double wpm;                   ///< WPM adjusted by accuracy (wpmRaw * accuracy / 100)
+    double wpmRaw;                ///< Raw WPM (currentIndex / 5 / minutes)
 } SessionStats;
 
-/// @brief Get the current session statistics.
-/// @param engine The Engine instance.
-/// @return A SessionStats struct with the current statistics.
-///         Returns a zeroed struct if engine is NULL.
+/// @brief Get current session statistics.
+/// @param engine Engine instance.
+/// @return SessionStats with current statistics, zeroed if engine is NULL.
 SessionStats engineGetStats(Engine* engine);
 
 #ifdef __cplusplus
