@@ -14,7 +14,7 @@ PIPE_DIR = os.path.join(SCRIPTS, "build_cache")
 SENTENCES_DIR = os.path.join(PIPE_DIR, "fetch_sentences")
 
 
-DEFAULT_TIMEOUT = 600
+DEFAULT_TIMEOUT = 1200
 
 
 def log(msg):

@@ -9,9 +9,9 @@ import urllib.error
 
 
 API_URL = "https://en.wikipedia.org/w/api.php"
-MAX_SENTENCES = 5000
-BATCH_SIZE = 10
-ITERATIONS = 500
+MAX_SENTENCES = 11000
+BATCH_SIZE = 20
+ITERATIONS = 1000
 MIN_SENTENCE_LEN = 30
 DELAY = 1.0
 RETRIES = 3

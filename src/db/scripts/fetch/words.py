@@ -12,6 +12,7 @@ FREQLIST_URL = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/mast
 SYSTEM_PATHS = ["/usr/share/dict/words", "/usr/dict/words", "/usr/share/dict/american-english"]
 MIN_LEN = 3
 MAX_LEN = 12
+MAX_WORDS = 120000
 RARE_LETTERS = {"z": 2, "q": 2, "x": 1.5, "j": 1, "v": 1, "k": 1}
 
 
@@ -105,6 +106,8 @@ def main():
 
     # Sort: frequency desc, then word length asc, then alphabetical
     entries.sort(key=lambda e: (-e[1], len(e[0]), e[0]))
+
+    entries = entries[:MAX_WORDS]
 
     for rank, (word, _freq) in enumerate(entries, start=1):
         record = {
