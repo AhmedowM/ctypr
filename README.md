@@ -1,6 +1,10 @@
 # ctypr
 
 [![CI](https://github.com/AhmedowM/ctypr/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmedowM/ctypr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/AhmedowM/cpptypr)](https://github.com/AhmedowM/cpptypr/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-linux%20|%20macOS%20|%20windows-blue)]()
+[![C17](https://img.shields.io/badge/C_Standard-C17-blue)]()
 
 A C17 library for typing sessions — speed, accuracy, timing. Embed it in tutors, CLI tools, or games.
 

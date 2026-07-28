@@ -84,7 +84,7 @@
 - Repository: 12 tests (unchanged)
 - Logger: 15 tests (unchanged)
 - Concurrency: 5 tests (new)
-- **Total: 98 tests** (was 93 in v1.5.0, 91 in v1.4.0, 50 in v1.3.0)
+- **Total: 98 tests** (was 93 in v1.5.0, 91 in v1.4.0, ~80-90 in v1.3.0)
 
 ---
 
