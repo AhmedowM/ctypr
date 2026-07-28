@@ -39,8 +39,34 @@ jobs:
             build/ctypr-*.zip
           if-no-files-found: warn
 
-  release:
+  build-db:
     needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install -r tools/content-db/requirements.txt
+
+      - name: Build content databases
+        run: python tools/content-db/run_pipeline.py --sentences-db sentences.db --words-db words.db
+
+      - name: Upload DB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctypr-${{ github.ref_name }}-content-db
+          path: |
+            sentences.db
+            words.db
+
+  release:
+    needs: [build, build-db]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -57,3 +83,5 @@ jobs:
           files: |
             ctypr-*.tar.gz
             ctypr-*.zip
+            sentences.db
+            words.db

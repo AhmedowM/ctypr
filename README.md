@@ -222,7 +222,26 @@ Or individually:
 ./build/tests/test_logger       # 15 tests
 ```
 
-**93 tests total** — across all 5 suites.
+**98 tests total** — across all 6 suites (engine, content, formatter, repository, logger, concurrency).
+
+## Usage from downstream projects
+
+Projects using ctypr can find the content DB pipeline scripts via the `CTYPR_CONTENT_DB_DIR` CMake variable (set by `find_package(ctypr)`):
+
+```cmake
+find_package(ctypr REQUIRED)
+# CTYPR_CONTENT_DB_DIR points to installed scripts
+# Build words.db / sentences.db at build time:
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/words.db ${CMAKE_BINARY_DIR}/sentences.db
+    COMMAND ${Python3_EXECUTABLE} ${CTYPR_CONTENT_DB_DIR}/run_pipeline.py
+        --sentences-db ${CMAKE_BINARY_DIR}/sentences.db
+        --words-db ${CMAKE_BINARY_DIR}/words.db
+    DEPENDS ${CTYPR_CONTENT_DB_DIR}/run_pipeline.py
+)
+```
+
+Pre-built databases are also attached to each [GitHub release](https://github.com/AhmedowM/ctypr/releases) for convenience.
 
 ## License
 

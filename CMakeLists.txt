@@ -183,6 +183,11 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/core/ctypr.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
+# Install content DB pipeline scripts (build-time tooling for downstream projects)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools/content-db/
+    DESTINATION share/ctypr/content-db
+)
+
 # Generate and install CMake config files
 include(CMakePackageConfigHelpers)
 
