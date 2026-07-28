@@ -51,22 +51,19 @@ static void createTestWordDb(void) {
     remove(TEST_DB);
     sqlite3* db = NULL;
     ASSERT(sqlite3_open(TEST_DB, &db) == SQLITE_OK, "open test db");
-    ASSERT(execSql(db, "CREATE TABLE IF NOT EXISTS common_words ("
+    ASSERT(execSql(db, "CREATE TABLE IF NOT EXISTS words ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT NOT NULL UNIQUE,"
-        "word_length INTEGER NOT NULL, frequency_rank INTEGER NOT NULL)") == SQLITE_OK,
-        "create common_words");
-    ASSERT(execSql(db, "CREATE TABLE IF NOT EXISTS random_words ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT NOT NULL UNIQUE,"
-        "word_length INTEGER NOT NULL, difficulty_rating REAL DEFAULT 1.0)") == SQLITE_OK,
-        "create random_words");
-    ASSERT(execSql(db, "INSERT INTO common_words (word, word_length, frequency_rank) VALUES ('the', 3, 1)") == SQLITE_OK, "insert the");
-    ASSERT(execSql(db, "INSERT INTO common_words (word, word_length, frequency_rank) VALUES ('quick', 5, 2)") == SQLITE_OK, "insert quick");
-    ASSERT(execSql(db, "INSERT INTO common_words (word, word_length, frequency_rank) VALUES ('brown', 5, 3)") == SQLITE_OK, "insert brown");
-    ASSERT(execSql(db, "INSERT INTO common_words (word, word_length, frequency_rank) VALUES ('fox', 3, 4)") == SQLITE_OK, "insert fox");
-    ASSERT(execSql(db, "INSERT INTO random_words (word, word_length) VALUES ('jumps', 5)") == SQLITE_OK, "insert jumps");
-    ASSERT(execSql(db, "INSERT INTO random_words (word, word_length) VALUES ('over', 4)") == SQLITE_OK, "insert over");
-    ASSERT(execSql(db, "INSERT INTO random_words (word, word_length) VALUES ('lazy', 4)") == SQLITE_OK, "insert lazy");
-    ASSERT(execSql(db, "INSERT INTO random_words (word, word_length) VALUES ('dog', 3)") == SQLITE_OK, "insert dog");
+        "word_length INTEGER NOT NULL, frequency_rank INTEGER NOT NULL,"
+        "difficulty_rating REAL DEFAULT 1.0)") == SQLITE_OK,
+        "create words");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('the', 3, 1)") == SQLITE_OK, "insert the");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('quick', 5, 2)") == SQLITE_OK, "insert quick");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('brown', 5, 3)") == SQLITE_OK, "insert brown");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('fox', 3, 4)") == SQLITE_OK, "insert fox");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('jumps', 5, 5)") == SQLITE_OK, "insert jumps");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('over', 4, 6)") == SQLITE_OK, "insert over");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('lazy', 4, 7)") == SQLITE_OK, "insert lazy");
+    ASSERT(execSql(db, "INSERT INTO words (word, word_length, frequency_rank) VALUES ('dog', 3, 8)") == SQLITE_OK, "insert dog");
     sqlite3_close(db);
 }
 
@@ -84,6 +81,8 @@ static void createTestSentenceDb(void) {
         "VALUES ('The quick brown fox.', 20, 4, 'Test')") == SQLITE_OK, "insert sentence 1");
     ASSERT(execSql(db, "INSERT INTO typing_sentences (text_content, char_count, word_count, source_title) "
         "VALUES ('Jumps over the lazy dog.', 24, 5, 'Test')") == SQLITE_OK, "insert sentence 2");
+    ASSERT(execSql(db, "INSERT INTO typing_sentences (text_content, char_count, word_count, source_title, difficulty_category) "
+        "VALUES ('Difficult rare words.', 22, 3, 'Test', 'Hard')") == SQLITE_OK, "insert sentence 3");
     sqlite3_close(db);
 }
 
@@ -228,9 +227,10 @@ static void test_database_empty_table(void) {
 
     sqlite3* db = NULL;
     ASSERT(sqlite3_open(TEST_DB, &db) == SQLITE_OK, "open db");
-    ASSERT(execSql(db, "CREATE TABLE common_words ("
+    ASSERT(execSql(db, "CREATE TABLE words ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT NOT NULL UNIQUE,"
-        "word_length INTEGER NOT NULL, frequency_rank INTEGER NOT NULL)") == SQLITE_OK,
+        "word_length INTEGER NOT NULL, frequency_rank INTEGER NOT NULL,"
+        "difficulty_rating REAL DEFAULT 1.0)") == SQLITE_OK,
         "create table");
     sqlite3_close(db);
 
@@ -308,6 +308,76 @@ static void test_database_content_limit(void) {
 
     contentProviderDestroy(cp);
     remove(TEST_DB);
+    PASS();
+}
+
+/* ===== Test: Database provider - difficulty filter ===== */
+static void test_database_difficulty_filter(void) {
+    TEST("Database provider: difficulty filter on sentences");
+    createTestSentenceDb();
+
+    ContentProvider* cp = contentProviderFromDatabase(TEST_SENTENCE_DB);
+    ASSERT(cp != NULL, "provider should not be NULL");
+    contentProviderSetMode(cp, CONTENT_MODE_SENTENCES);
+    contentProviderSetDifficultyFilter(cp, "Hard");
+    contentProviderSetContentLimit(cp, 10);
+
+    ContentChunk chunk = contentProviderGetNext(cp);
+    ASSERT(chunk.length > 0, "should have content");
+    ASSERT(strstr(chunk.text, "Difficult rare words.") != NULL, "should contain hard sentence");
+    ASSERT(strstr(chunk.text, "quick brown fox") == NULL, "should NOT contain easy sentence");
+
+    contentProviderDestroy(cp);
+    remove(TEST_SENTENCE_DB);
+    PASS();
+}
+
+/* ===== Test: Database provider - word length range filter ===== */
+static void test_database_word_length_range(void) {
+    TEST("Database provider: word length range filter");
+    createTestWordDb();
+
+    ContentProvider* cp = contentProviderFromDatabase(TEST_DB);
+    ASSERT(cp != NULL, "provider should not be NULL");
+    contentProviderSetMode(cp, CONTENT_MODE_COMMON_WORDS);
+    contentProviderSetWordLengthRange(cp, 4, 5);
+    contentProviderSetContentLimit(cp, 10);
+
+    ContentChunk chunk = contentProviderGetNext(cp);
+    ASSERT(chunk.length > 0, "should have content");
+    ASSERT(strstr(chunk.text, "quick") != NULL, "should contain 'quick' (5 chars)");
+    ASSERT(strstr(chunk.text, "brown") != NULL, "should contain 'brown' (5 chars)");
+    ASSERT(strstr(chunk.text, "the") == NULL, "should NOT contain 'the' (3 chars)");
+    ASSERT(strstr(chunk.text, "fox") == NULL, "should NOT contain 'fox' (3 chars)");
+    ASSERT(strstr(chunk.text, "dog") == NULL, "should NOT contain 'dog' (3 chars)");
+
+    contentProviderDestroy(cp);
+    remove(TEST_DB);
+    PASS();
+}
+
+/* ===== Test: Database provider - filter persists after reset ===== */
+static void test_database_filter_persists_on_reset(void) {
+    TEST("Database provider: filter persists after reset");
+    createTestSentenceDb();
+
+    ContentProvider* cp = contentProviderFromDatabase(TEST_SENTENCE_DB);
+    ASSERT(cp != NULL, "provider should not be NULL");
+    contentProviderSetMode(cp, CONTENT_MODE_SENTENCES);
+    contentProviderSetDifficultyFilter(cp, "Hard");
+    contentProviderSetContentLimit(cp, 10);
+
+    ContentChunk chunk1 = contentProviderGetNext(cp);
+    ASSERT(chunk1.length > 0, "first fetch should have content");
+
+    contentProviderReset(cp);
+    ContentChunk chunk2 = contentProviderGetNext(cp);
+    ASSERT(chunk2.length > 0, "after reset should have content");
+    ASSERT(strstr(chunk2.text, "Difficult rare words.") != NULL, "filter should still be active after reset");
+    ASSERT(strstr(chunk2.text, "quick brown fox") == NULL, "filter should exclude normal sentences");
+
+    contentProviderDestroy(cp);
+    remove(TEST_SENTENCE_DB);
     PASS();
 }
 
@@ -395,6 +465,9 @@ int main(void) {
     test_database_reset();
     test_database_content_limit();
     test_database_default_mode();
+    test_database_difficulty_filter();
+    test_database_word_length_range();
+    test_database_filter_persists_on_reset();
 
     // Lifecycle
     test_provider_null_safety();
