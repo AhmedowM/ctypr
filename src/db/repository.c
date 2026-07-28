@@ -1,27 +1,10 @@
 #include "repository.h"
 #include "logger.h"
+#include "platform_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef _WIN32
-#include <windows.h>
-typedef SRWLOCK ctypr_mutex_t;
-#define MUTEX_INIT(m)   InitializeSRWLock(m)
-#define MUTEX_LOCK(m)   AcquireSRWLockExclusive(m)
-#define MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
-#define MUTEX_DESTROY(m) ((void)0)
-#define strdup _strdup
-#else
-#include <pthread.h>
-typedef pthread_mutex_t ctypr_mutex_t;
-#define MUTEX_INIT(m)   pthread_mutex_init(m, NULL)
-#define MUTEX_LOCK(m)   pthread_mutex_lock(m)
-#define MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
-#define MUTEX_DESTROY(m) pthread_mutex_destroy(m)
-#endif
-
 #include <sqlite3.h>
 
 typedef struct Repository {

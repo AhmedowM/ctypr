@@ -1,38 +1,7 @@
 #include "content.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "test_common.h"
 
 #include <sqlite3.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-static int tests_passed = 0;
-static int tests_failed = 0;
-static int test_count = 0;
-
-#define TEST(name) do { \
-    test_count++; \
-    printf("  TEST %d: %s ... ", test_count, name); \
-    fflush(stdout); \
-} while(0)
-
-#define PASS() do { \
-    tests_passed++; \
-    printf("PASSED\n"); \
-} while(0)
-
-#define FAIL(msg) do { \
-    tests_failed++; \
-    printf("FAILED: %s (line %d)\n", msg, __LINE__); \
-} while(0)
-
-#define ASSERT(cond, msg) do { \
-    if (!(cond)) { FAIL(msg); return; } \
-} while(0)
 
 static const char* TEST_DB = "test_content_words.db";
 static const char* TEST_SENTENCE_DB = "test_content_sentences.db";
@@ -473,8 +442,5 @@ int main(void) {
     test_provider_null_safety();
     test_provider_reset();
 
-    printf("\n=== Results: %d passed, %d failed, %d total ===\n",
-           tests_passed, tests_failed, test_count);
-
-    return tests_failed > 0 ? 1 : 0;
+    TEST_SUMMARY();
 }

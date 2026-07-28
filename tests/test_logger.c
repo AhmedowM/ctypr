@@ -1,36 +1,5 @@
 #include "logger.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-static int tests_passed = 0;
-static int tests_failed = 0;
-static int test_count = 0;
-
-#define TEST(name) do { \
-    test_count++; \
-    printf("  TEST %d: %s ... ", test_count, name); \
-    fflush(stdout); \
-} while(0)
-
-#define PASS() do { \
-    tests_passed++; \
-    printf("PASSED\n"); \
-} while(0)
-
-#define FAIL(msg) do { \
-    tests_failed++; \
-    printf("FAILED: %s (line %d)\n", msg, __LINE__); \
-} while(0)
-
-#define ASSERT(cond, msg) do { \
-    if (!(cond)) { FAIL(msg); return; } \
-} while(0)
+#include "test_common.h"
 
 /* Helper: write all log messages to a file, read it back, remove it */
 static char* capture_file_log(Logger* logger, LogLevel level, const char* msg) {
@@ -357,8 +326,5 @@ int main(void) {
     test_logger_add_file_failure();
     test_null_safety();
 
-    printf("\n=== Results: %d passed, %d failed, %d total ===\n",
-           tests_passed, tests_failed, test_count);
-
-    return tests_failed > 0 ? 1 : 0;
+    TEST_SUMMARY();
 }

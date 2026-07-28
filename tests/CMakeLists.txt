@@ -1,49 +1,15 @@
-# Engine tests
-add_executable(test_engine
-    test_engine.c
-)
-target_link_libraries(test_engine PRIVATE ctypr)
-add_test(NAME engine COMMAND test_engine)
-set_tests_properties(engine PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
+function(ctypr_add_test name source)
+    add_executable(test_${name} ${source})
+    target_link_libraries(test_${name} PRIVATE ctypr ${ARGN})
+    add_test(NAME ${name} COMMAND test_${name})
+    set_tests_properties(${name} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+endfunction()
 
-# Content provider tests
-add_executable(test_content
-    test_content.c
-)
-target_link_libraries(test_content PRIVATE ctypr sqlite3)
-add_test(NAME content COMMAND test_content)
-set_tests_properties(content PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-# Formatter tests
-add_executable(test_formatter
-    test_formatter.c
-)
-target_link_libraries(test_formatter PRIVATE ctypr)
-add_test(NAME formatter COMMAND test_formatter)
-set_tests_properties(formatter PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-# Repository tests
-add_executable(test_repository
-    test_repository.c
-)
-target_link_libraries(test_repository PRIVATE ctypr)
-add_test(NAME repository COMMAND test_repository)
-set_tests_properties(repository PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-# Logger tests
-add_executable(test_logger
-    test_logger.c
-)
-target_link_libraries(test_logger PRIVATE ctypr)
-add_test(NAME logger COMMAND test_logger)
-set_tests_properties(logger PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
+ctypr_add_test(engine test_engine.c)
+ctypr_add_test(content test_content.c sqlite3)
+ctypr_add_test(formatter test_formatter.c)
+ctypr_add_test(repository test_repository.c)
+ctypr_add_test(logger test_logger.c)
+ctypr_add_test(concurrency test_concurrency.c)

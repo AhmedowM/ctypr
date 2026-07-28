@@ -1,54 +1,7 @@
 #include "repository.h"
+#include "test_common.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
-#include <time.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-/* Simple test framework */
-static int tests_passed = 0;
-static int tests_failed = 0;
-static int test_count = 0;
-
-#define TEST(name) do { \
-    test_count++; \
-    printf("  TEST %d: %s ... ", test_count, name); \
-    fflush(stdout); \
-} while(0)
-
-#define PASS() do { \
-    tests_passed++; \
-    printf("PASSED\n"); \
-} while(0)
-
-#define FAIL(msg) do { \
-    tests_failed++; \
-    printf("FAILED: %s (line %d)\n", msg, __LINE__); \
-} while(0)
-
-#define ASSERT(cond, msg) do { \
-    if (!(cond)) { FAIL(msg); return; } \
-} while(0)
-
-/* Test helpers */
-static char TEST_DB_PATH[256];
-
-static void cleanupTestDb(void) {
-    remove(TEST_DB_PATH);
-    // Also remove journal files that SQLite might create
-    remove("test_repository.db-journal");
-    remove("test_repository.db-shm");
-    remove("test_repository.db-wal");
-}
-
-static void setupTestDbPath(void) {
-    snprintf(TEST_DB_PATH, sizeof(TEST_DB_PATH), "test_repository_%lld.db", (long long)time(NULL));
-}
+TEST_DB_HELPERS("test_repository")
 
 static SessionData createTestSession(int64_t id, const char* mode) {
     SessionData data;
@@ -375,8 +328,5 @@ int main(void) {
     test_clear_all();
     test_repository_null_safety();
     
-    printf("\n=== Results: %d passed, %d failed, %d total ===\n",
-           tests_passed, tests_failed, test_count);
-    
-    return tests_failed > 0 ? 1 : 0;
+    TEST_SUMMARY();
 }

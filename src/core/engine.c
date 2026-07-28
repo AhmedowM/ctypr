@@ -524,44 +524,33 @@ int engineOnError(Engine* engine, EngineCallback callback, void* userData) {
     return signalConnect(&engine->onError, callback, userData);
 }
 
+static Signal* signalForEvent(Engine* engine, EngineEvent event) {
+    switch (event) {
+        case ENGINE_EVENT_STARTED:   return &engine->onStarted;
+        case ENGINE_EVENT_STOPPED:   return &engine->onStopped;
+        case ENGINE_EVENT_PAUSED:    return &engine->onPaused;
+        case ENGINE_EVENT_RESUMED:   return &engine->onResumed;
+        case ENGINE_EVENT_TIMEOUT:   return &engine->onTimeout;
+        case ENGINE_EVENT_FINISHED:  return &engine->onFinished;
+        case ENGINE_EVENT_CORRECT_KEYSTROKE:   return &engine->onCorrectKeystroke;
+        case ENGINE_EVENT_INCORRECT_KEYSTROKE: return &engine->onIncorrectKeystroke;
+        case ENGINE_EVENT_BACKSPACE: return &engine->onBackspace;
+        case ENGINE_EVENT_SEGMENT_COMPLETED: return &engine->onSegmentCompleted;
+        case ENGINE_EVENT_ERROR:     return &engine->onError;
+        default: return NULL;
+    }
+}
+
 void engineDisconnect(Engine* engine, EngineEvent event, int slotId) {
     if (!engine) return;
-    Signal* sig = NULL;
-    switch (event) {
-        case ENGINE_EVENT_STARTED:   sig = &engine->onStarted; break;
-        case ENGINE_EVENT_STOPPED:   sig = &engine->onStopped; break;
-        case ENGINE_EVENT_PAUSED:    sig = &engine->onPaused; break;
-        case ENGINE_EVENT_RESUMED:   sig = &engine->onResumed; break;
-        case ENGINE_EVENT_TIMEOUT:   sig = &engine->onTimeout; break;
-        case ENGINE_EVENT_FINISHED:  sig = &engine->onFinished; break;
-        case ENGINE_EVENT_CORRECT_KEYSTROKE:   sig = &engine->onCorrectKeystroke; break;
-        case ENGINE_EVENT_INCORRECT_KEYSTROKE: sig = &engine->onIncorrectKeystroke; break;
-        case ENGINE_EVENT_BACKSPACE: sig = &engine->onBackspace; break;
-        case ENGINE_EVENT_SEGMENT_COMPLETED: sig = &engine->onSegmentCompleted; break;
-        case ENGINE_EVENT_ERROR:     sig = &engine->onError; break;
-        default: return;
-    }
-    signalDisconnect(sig, slotId);
+    Signal* sig = signalForEvent(engine, event);
+    if (sig) signalDisconnect(sig, slotId);
 }
 
 void engineClearEvent(Engine* engine, EngineEvent event) {
     if (!engine) return;
-    Signal* sig = NULL;
-    switch (event) {
-        case ENGINE_EVENT_STARTED:   sig = &engine->onStarted; break;
-        case ENGINE_EVENT_STOPPED:   sig = &engine->onStopped; break;
-        case ENGINE_EVENT_PAUSED:    sig = &engine->onPaused; break;
-        case ENGINE_EVENT_RESUMED:   sig = &engine->onResumed; break;
-        case ENGINE_EVENT_TIMEOUT:   sig = &engine->onTimeout; break;
-        case ENGINE_EVENT_FINISHED:  sig = &engine->onFinished; break;
-        case ENGINE_EVENT_CORRECT_KEYSTROKE:   sig = &engine->onCorrectKeystroke; break;
-        case ENGINE_EVENT_INCORRECT_KEYSTROKE: sig = &engine->onIncorrectKeystroke; break;
-        case ENGINE_EVENT_BACKSPACE: sig = &engine->onBackspace; break;
-        case ENGINE_EVENT_SEGMENT_COMPLETED: sig = &engine->onSegmentCompleted; break;
-        case ENGINE_EVENT_ERROR:     sig = &engine->onError; break;
-        default: return;
-    }
-    signalClear(sig);
+    Signal* sig = signalForEvent(engine, event);
+    if (sig) signalClear(sig);
 }
 
 // error.h
@@ -654,9 +643,7 @@ EngineSnapshot engineGetSnapshot(Engine* engine) {
         return snapshot;
     }
 
-    if (engine->state == ENGINE_RUNNING && engine->session->isTimingStarted) {
-        updateTime(engine->session);
-    }
+    snapshot.stats = engineGetStats(engine);
 
     memcpy(snapshot.text, engine->session->text, sizeof(engine->session->text));
     snapshot.length = engine->session->length;
@@ -671,18 +658,6 @@ EngineSnapshot engineGetSnapshot(Engine* engine) {
     for (size_t i = 0; i < engine->session->length && i < ENGINE_SNAPSHOT_TEXT_MAX; i++) {
         snapshot.incorrectFlags[i] = engine->session->incorrectKeystrokesBitmap[i] != 0;
     }
-
-    // Populate SessionStats inline
-    snapshot.stats.totalKeystrokes = engine->stats.totalKeystrokes;
-    snapshot.stats.correctKeystrokes = engine->stats.correctKeystrokes;
-    snapshot.stats.incorrectKeystrokes = engine->stats.incorrectKeystrokes;
-    snapshot.stats.durationMs = engine->session->accumulatedTimeMs;
-    computeSessionStats(&snapshot.stats,
-                        engine->stats.correctKeystrokes,
-                        engine->stats.totalKeystrokes,
-                        engine->session->currentIndex,
-                        engine->session->accumulatedTimeMs);
-    memcpy(snapshot.stats.timestamp, engine->session->cachedTimestamp, sizeof(snapshot.stats.timestamp));
 
     snapshot.state = engine->state;
     snapshot.stopCause = engine->stopCause;

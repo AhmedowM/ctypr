@@ -1,24 +1,9 @@
 #include "logger.h"
+#include "platform_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef _WIN32
-#include <windows.h>
-typedef SRWLOCK ctypr_mutex_t;
-#define MUTEX_INIT(m)   InitializeSRWLock(m)
-#define MUTEX_LOCK(m)   AcquireSRWLockExclusive(m)
-#define MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
-#define MUTEX_DESTROY(m) ((void)0)
-#else
-#include <pthread.h>
-typedef pthread_mutex_t ctypr_mutex_t;
-#define MUTEX_INIT(m)   pthread_mutex_init(m, NULL)
-#define MUTEX_LOCK(m)   pthread_mutex_lock(m)
-#define MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
-#define MUTEX_DESTROY(m) pthread_mutex_destroy(m)
-#endif
 
 struct Logger {
     LogLevel currentLevel;
@@ -59,17 +44,24 @@ void loggerDestroy(Logger* logger) {
 
 void loggerSetLevel(Logger *logger, LogLevel level) {
     if (!logger) return;
+    MUTEX_LOCK(&logger->lock);
     logger->currentLevel = level;
+    MUTEX_UNLOCK(&logger->lock);
 }
 
 LogLevel loggerGetLevel(Logger *logger) {
     if (!logger) return LOG_LEVEL_NONE;
-    return logger->currentLevel;
+    MUTEX_LOCK(&logger->lock);
+    LogLevel level = logger->currentLevel;
+    MUTEX_UNLOCK(&logger->lock);
+    return level;
 }
 
 void loggerLogToStdout(Logger* logger, bool enable) {
     if (!logger) return;
+    MUTEX_LOCK(&logger->lock);
     logger->stdoutEnabled = enable;
+    MUTEX_UNLOCK(&logger->lock);
 }
 
 bool loggerAddFile(Logger *logger, const char *filepath) {
@@ -89,13 +81,16 @@ bool loggerAddFile(Logger *logger, const char *filepath) {
 
 void loggerLog(Logger* logger, LogLevel level, const char* message) {
     if (!logger) return;
-    if (level < logger->currentLevel || level > LOG_LEVEL_ERROR) return;
     MUTEX_LOCK(&logger->lock);
+    if (level < logger->currentLevel || level > LOG_LEVEL_ERROR) {
+        MUTEX_UNLOCK(&logger->lock);
+        return;
+    }
     if (logger->stdoutEnabled) {
         fprintf(stdout, "[%s] %s\n", LEVEL_LABELS[level], message);
         fflush(stdout);
     }
-    for (size_t i = 0; i < (size_t)logger->fileCount; i++) {
+    for (int i = 0; i < logger->fileCount; i++) {
         fprintf(logger->files[i], "[%s] %s\n", LEVEL_LABELS[level], message);
         fflush(logger->files[i]);
     }

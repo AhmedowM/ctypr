@@ -19,33 +19,7 @@
 #include <assert.h>
 #include <time.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-static int tests_passed = 0;
-static int tests_failed = 0;
-static int test_count = 0;
-
-#define TEST(name) do { \
-    test_count++; \
-    printf("  TEST %d: %s ... ", test_count, name); \
-    fflush(stdout); \
-} while(0)
-
-#define PASS() do { \
-    tests_passed++; \
-    printf("PASSED\n"); \
-} while(0)
-
-#define FAIL(msg) do { \
-    tests_failed++; \
-    printf("FAILED: %s (line %d)\n", msg, __LINE__); \
-} while(0)
-
-#define ASSERT(cond, msg) do { \
-    if (!(cond)) { FAIL(msg); return; } \
-} while(0)
+#include "test_common.h"
 
 static ContentProvider* sharedTestContent = NULL;
 
@@ -892,12 +866,7 @@ static void test_timeout_triggers(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-#ifdef _WIN32
-    Sleep(1100);
-#else
-    struct timespec ts = {1, 100000000L};
-    nanosleep(&ts, NULL);
-#endif
+    SLEEP_MS(1100);
     
     engineKeyPress(e, 'T');
     
@@ -943,12 +912,7 @@ static void test_timeout_pause_does_not_accumulate(void) {
     enginePause(e);
     ASSERT(engineIsPaused(e), "should be paused");
     
-#ifdef _WIN32
-    Sleep(1500);
-#else
-    struct timespec ts = {1, 500000000L};
-    nanosleep(&ts, NULL);
-#endif
+    SLEEP_MS(1500);
     
     engineResume(e);
     ASSERT(engineIsRunning(e), "should still be running (paused time not counted)");
@@ -969,12 +933,7 @@ static void test_engine_tick(void) {
     engineStart(e);
     ASSERT(engineIsRunning(e), "should be running");
     
-#ifdef _WIN32
-    Sleep(1100);
-#else
-    struct timespec ts = {1, 100000000L};
-    nanosleep(&ts, NULL);
-#endif
+    SLEEP_MS(1100);
 
     engineTick(e);
     ASSERT(engineIsTimedOut(e), "should be timed out after engineTick");
@@ -999,12 +958,7 @@ static void test_timeout_backspace_checks_timeout(void) {
     engineKeyPress(e, 'T');
     engineKeyPress(e, 'h');
     
-#ifdef _WIN32
-    Sleep(1100);
-#else
-    struct timespec ts = {1, 100000000L};
-    nanosleep(&ts, NULL);
-#endif
+    SLEEP_MS(1100);
     
     engineBackspacePress(e);
     
@@ -1372,8 +1326,5 @@ int main(void) {
     
     contentProviderDestroy(sharedTestContent);
     
-    printf("\n=== Results: %d passed, %d failed, %d total ===\n",
-           tests_passed, tests_failed, test_count);
-    
-    return tests_failed > 0 ? 1 : 0;
+    TEST_SUMMARY();
 }
