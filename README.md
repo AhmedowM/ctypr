@@ -1,7 +1,7 @@
 # ctypr
 
 [![CI](https://github.com/AhmedowM/ctypr/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmedowM/ctypr/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/AhmedowM/cpptypr)](https://github.com/AhmedowM/cpptypr/releases)
+[![Release](https://img.shields.io/github/v/release/AhmedowM/ctypr)](https://github.com/AhmedowM/ctypr/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-linux%20|%20macOS%20|%20windows-blue)]()
 [![C17](https://img.shields.io/badge/C_Standard-C17-blue)]()
