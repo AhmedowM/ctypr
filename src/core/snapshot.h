@@ -16,18 +16,22 @@ typedef struct Engine Engine;
 
 #define ENGINE_SNAPSHOT_TEXT_MAX 4096
 
+/// @brief Complete session snapshot for UI rendering.
 typedef struct EngineSnapshot {
-    char text[ENGINE_SNAPSHOT_TEXT_MAX];
-    size_t length;
-    uint32_t cursorIndex;
-    char expectedChar;
-    bool incorrectFlags[ENGINE_SNAPSHOT_TEXT_MAX];
+    char text[ENGINE_SNAPSHOT_TEXT_MAX];      ///< Session text
+    size_t length;                            ///< Text length
+    uint32_t cursorIndex;                     ///< Current cursor position
+    char expectedChar;                        ///< Character at cursor (NUL if done)
+    bool incorrectFlags[ENGINE_SNAPSHOT_TEXT_MAX]; ///< Per-position error flags
 
-    SessionStats stats;
-    EngineState state;
-    EngineStopCause stopCause;
+    SessionStats stats;                       ///< Session statistics
+    EngineState state;                        ///< Current engine state
+    EngineStopCause stopCause;                ///< Stop reason
 } EngineSnapshot;
 
+/// @brief Get an atomic snapshot of the current session state.
+/// @param engine Engine instance.
+/// @return EngineSnapshot with current state. Zeroed if engine is NULL.
 EngineSnapshot engineGetSnapshot(Engine* engine);
 
 #ifdef __cplusplus
