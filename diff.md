@@ -1,125 +1,105 @@
-# Changes v1.1.0 → v1.3.0
+# Changes v1.3.0 → v1.5.1
 
-## Features
-- Added `engineTick(Engine* self)` API for manual timer updates and timeout checks, useful for game loops.
+## v1.4.0 — Pipeline alignment + content filter API
 
-## Bug fixes
+### Features
+- **New content filter API** (`content.h`):
+  - `contentProviderSetDifficultyFilter(cp, "Easy"|"Normal"|"Hard"|"Expert"|NULL)` — filters sentences by difficulty. NULL clears the filter.
+  - `contentProviderSetWordLengthRange(cp, min_len, max_len)` — filters words by length range. Pass 0 for both to clear.
+  - Both filters dynamically build WHERE clause parameters; persist across `reset()`.
 
-### #8 — `incorrectKeystrokes` not decremented on backspace in Flow mode
-Fixed: both `totalKeystrokes` and `incorrectKeystrokes`/`correctKeystrokes` are now decremented on backspace (net-effective accuracy). Backspace + retype correct → 100% accuracy.
+### DB schema changes
+- `words.db` consolidated: `common_words` + `random_words` tables replaced by a single `words` table with a `frequency_rank` column.
+- `CONTENT_MODE_COMMON_WORDS` now queries `ORDER BY frequency_rank ASC` (most frequent first).
+- `CONTENT_MODE_RANDOM_WORDS` now queries `ORDER BY RANDOM()`.
+- `sentences.db` unchanged (10,400 rows, 192K word tokens).
 
-### #9 — `signalInit` never called
-Fixed: all 11 `Signal` instances are now explicitly initialized via `signalInit()` in `engineCreate`.
+### Bug fixes
+- DB content provider queries now target the correct table names (`words` instead of `common_words`/`random_words`).
 
-## Tests updated
-- `tests/test_engine.c` — 3 backspace tests updated for net-effective accuracy; 1 new test for `engineTick`.
+### Pipeline (Python scripts in `src/db/scripts/`)
+- New `run_pipeline.py` — orchestrates all stages: fetch → clean → analyze → score → build_db.
+- Fetch sources: DummyJSON (1,454 quotes), Wikipedia (11K sents, BATCH_SIZE=20, 2.4× faster, zero 429s), NPR/NYT news.
+- Word frequency lists: 120K entries from multiple sources, deduplicated, capped at 120K.
+- Robust error handling: retry with exponential backoff, timeout hardening (300→600s), `getattr` vs `dict.get` bug fix.
+- Score tuning: 40-70 WPM range cap, length bonus above 30 chars, 0.2 floor.
 
-## Documentation
-- `README.md` — Updated with `engineTick` API, EngineSnapshot API, commit convention, version macros, correct `loggerLogToStdout` name, updated test counts, and usage example.
+### Doxygen cleanup
+- `@param` / `@return` annotations added to all public headers; stale comments removed.
 
-## Diff (core only, excl. docs/CI infra)
+---
 
-```diff
-diff --git a/src/core/engine.c b/src/core/engine.c
-index aee0c4d..d127b13 100644
---- a/src/core/engine.c
-+++ b/src/core/engine.c
-@@ -212,6 +212,18 @@ Engine* engineCreate(const EngineConfig* config) {
-     engine->contentProvider = config->contentProvider;
-     engine->autoSaveRepo = config->autoSaveRepo;
-     engine->autoSaveEnabled = config->autoSaveEnabled;
-+    signalInit(&engine->onStarted);
-+    signalInit(&engine->onStopped);
-+    signalInit(&engine->onPaused);
-+    signalInit(&engine->onResumed);
-+    signalInit(&engine->onTimeout);
-+    signalInit(&engine->onFinished);
-+    signalInit(&engine->onCorrectKeystroke);
-+    signalInit(&engine->onIncorrectKeystroke);
-+    signalInit(&engine->onBackspace);
-+    signalInit(&engine->onSegmentCompleted);
-+    signalInit(&engine->onError);
-+
-     engine->session = calloc(1, sizeof(Session));
-     if (!engine->session) {
-         fprintf(stderr, "[ERROR] Failed to allocate Engine session\n");
-@@ -428,8 +440,10 @@ void engineBackspacePress_Flow(Engine *self) {
-     if (self->session->currentIndex <= 0) return;
-     self->session->currentIndex--;
-     uint8_t *was_incorrect = &self->session->incorrectKeystrokesBitmap[self->session->currentIndex];
-+    self->stats.totalKeystrokes--;
-     if (*was_incorrect == 1) {
-         *was_incorrect = 0;
-+        self->stats.incorrectKeystrokes--;
-         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Flow: backspace over incorrect key");
-     } else {
-         self->stats.correctKeystrokes--;
-@@ -456,6 +470,12 @@ void engineBackspacePress(Engine *self) {
-     } else if (self->mode == FlowMode) {
-         engineBackspacePress_Flow(self);
-     }
- }
- 
-+void engineTick(Engine* self) {
-+    if (!self || self->state != ENGINE_RUNNING) return;
-+    updateTime(self->session);
-+    checkTimeout(self);
-+}
-+
-diff --git a/src/core/engine.h b/src/core/engine.h
-index b71d806..1641be4 100644
---- a/src/core/engine.h
-+++ b/src/core/engine.h
-@@ -164,6 +164,11 @@ void engineKeyPress(Engine* self, char key);
- /// @param self The Engine instance.
- void engineBackspacePress(Engine* self);
- 
-+/// @brief Manually update the engine's internal session timer and check for timeout.
-+///        Useful for driving the engine in game loops without keystrokes.
-+/// @param self The Engine instance.
-+void engineTick(Engine* self);
-+
- #ifdef __cplusplus
- }
- #endif
-diff --git a/tests/test_engine.c b/tests/test_engine.c
-index 1641be4..e9f3b21 100644
---- a/tests/test_engine.c
-+++ b/tests/test_engine.c
-@@ -959,6 +959,27 @@ static void test_timeout_pause_does_not_accumulate(void) {
-     PASS();
- }
- 
-+static void test_engine_tick(void) {
-+    TEST("Engine: engineTick manually advances time");
-+    Engine* e = createTestEngine(StrictMode, 1);
-+    ASSERT(e != NULL, "engineCreate returned NULL");
-+    
-+    engineStart(e);
-+    ASSERT(engineIsRunning(e), "should be running");
-+    
-+#ifdef _WIN32
-+    Sleep(1100);
-+#else
-+    struct timespec ts = {1, 100000000L};
-+    nanosleep(&ts, NULL);
-+#endif
-+
-+    engineTick(e);
-+    ASSERT(engineIsTimedOut(e), "should be timed out after engineTick");
-+    
-+    engineDestroy(e);
-+    PASS();
-+}
-+
- static void test_timeout_backspace_checks_timeout(void) {
-     TEST("Timeout: backspace also triggers timeout check");
-     Engine* e = createTestEngine(StrictMode, 1);
-@@ -1368,6 +1389,7 @@ int main(void) {
-     test_timeout_triggers();
-     test_timeout_zero_disabled();
-     test_timeout_pause_does_not_accumulate();
-+    test_engine_tick();
-     test_timeout_backspace_checks_timeout();
-     test_auto_save_session();
-```
+## v1.5.0 — Thread-safe Repository + `getSessionsByMode`
+
+### API additions
+- `SessionData* repositoryGetSessionsByMode(Repository* repo, const char* mode, size_t* count)` — filters sessions by mode ("strict" or "flow") in SQL, avoiding a manual post-filter loop.
+
+### Thread-safety contract (documented in header comments)
+- **Engine**: NOT thread-safe (caller must serialize access to a single `Engine*`)
+- **ContentProvider**: NOT thread-safe (caller must serialize access to a single `ContentProvider*`)
+- **Repository**: IS thread-safe (all public functions are mutex-protected)
+- **Logger**: IS thread-safe (all public functions are mutex-protected)
+
+### Internal changes
+- Repository struct now has a `ctypr_mutex_t lock` — wraps all 14 public functions with `MUTEX_LOCK`/`MUTEX_UNLOCK`.
+- `repositoryGetBestWpm()` / `repositoryGetBestRawWpm()` refactored into shared `getBestByColumn()` internal helper.
+
+### Default behavior
+- `repositoryCreate(NULL)` defaults database path to `"typr.db"` (unchanged, now documented).
+
+---
+
+## v1.5.1 — DRY refactor + logger thread-safety fix + concurrency tests
+
+### API changes
+- None (all changes are internal or test-only).
+
+### Thread-safety fix (Logger)
+- `loggerSetLevel()` — previously wrote `currentLevel` without the mutex. Now acquires the lock.
+- `loggerGetLevel()` — previously read `currentLevel` without the mutex. Now acquires the lock.
+- `loggerLogToStdout()` — previously wrote `stdoutEnabled` without the mutex. Now acquires the lock.
+- `loggerLog()` — previously checked `level < currentLevel` outside the lock. Now checks inside the lock.
+
+### Internal refactors
+- **`src/core/platform_internal.h`** (new): consolidates `ctypr_mutex_t`/`MUTEX_*` macros, `ctypr_thread_t`/`THREAD_*` macros, and `strdup` platform define — replaces 16-line duplicated blocks in `repository.c` and `logger.c`.
+- **`src/core/engine.c`**:
+  - Extracted `signalForEvent(Engine*, EngineEvent)` helper — kills a 12-line `switch` duplicated in `engineDisconnect()` and `engineClearEvent()`.
+  - `engineGetSnapshot()` now calls `engineGetStats(engine)` instead of re-implementing stat population inline.
+
+### Test changes
+- **`tests/test_common.h`** (new): shared test framework macros (`TEST`/`PASS`/`FAIL`/`ASSERT`), `TEST_SUMMARY()`, `SLEEP_MS()`, `TEST_DB_HELPERS()`. Replaces ~27 lines duplicated across all 6 test files.
+- **`tests/test_concurrency.c`** (new): 5 tests for thread safety:
+  1. Repository: 4 threads × 50 concurrent saves → verify count = 200 + data integrity
+  2. Repository: 2 writers + 2 readers running concurrently
+  3. Logger: 4 threads × 100 concurrent log messages to a shared file
+  4. Logger: 3 log threads + 1 reconfigure thread (toggling level/stdout)
+  5. NULL safety for all concurrency-relevant APIs
+- **`tests/CMakeLists.txt`**: new `ctypr_add_test()` function eliminates 8-line target boilerplate.
+- 4 platform-specific `Sleep`/`nanosleep` blocks in `test_engine.c` replaced with `SLEEP_MS()`.
+
+### Test counts
+- Engine: 51 tests (unchanged)
+- Content: 19 tests (unchanged)
+- Formatter: 8 tests (unchanged)
+- Repository: 12 tests (unchanged)
+- Logger: 15 tests (unchanged)
+- Concurrency: 5 tests (new)
+- **Total: 98 tests** (was 93 in v1.5.0, 91 in v1.4.0, 50 in v1.3.0)
+
+---
+
+## Summary: API surface comparison
+
+| API | v1.3.0 | v1.5.1 |
+|-----|--------|--------|
+| `contentProviderSetDifficultyFilter` | ❌ | ✅ |
+| `contentProviderSetWordLengthRange` | ❌ | ✅ |
+| `repositoryGetSessionsByMode` | ❌ | ✅ |
+| `engineTick` | ✅ (v1.2.0) | ✅ |
+| Thread-safety docs | ❌ | ✅ (all public headers) |
+| Mutex on Repository | ❌ | ✅ |
+| Logger full mutex coverage | ❌ (3 functions missing) | ✅ |
+| Shared internal headers | ❌ | `platform_internal.h` |
+| Shared test headers | ❌ | `test_common.h` |
+| Concurrency tests | ❌ | 5 tests |
+| DB pipeline scripts | ❌ | 9 Python scripts |
