@@ -225,15 +225,11 @@ static void test_get_sessions_by_mode(void) {
     repositorySaveSession(repo, &m4);
     
     size_t count = 0;
-    SessionData* strict = repositoryGetAll(repo, &count);
-    ASSERT(strict != NULL, "getAll should not return NULL");
-    
-    // Count strict modes manually
-    size_t strictCount = 0;
-    for (size_t i = 0; i < count; i++) {
-        if (strcmp(strict[i].mode, "strict") == 0) strictCount++;
-    }
-    ASSERT(strictCount == 2, "should have 2 strict sessions");
+    SessionData* strict = repositoryGetSessionsByMode(repo, "strict", &count);
+    ASSERT(strict != NULL, "getSessionsByMode should not return NULL");
+    ASSERT(count == 2, "should have 2 strict sessions");
+    ASSERT(strcmp(strict[0].mode, "strict") == 0, "first result mode should be strict");
+    ASSERT(strcmp(strict[1].mode, "strict") == 0, "second result mode should be strict");
     
     free(strict);
     repositoryDestroy(repo);

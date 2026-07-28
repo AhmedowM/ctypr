@@ -25,6 +25,10 @@ typedef struct SessionData {
     double accuracy;        ///< Accuracy percentage
 } SessionData;
 
+/// @brief Thread safety: Repository is thread-safe. Internal locking protects
+///        all public operations. Callers must ensure no other thread is using
+///        the same instance during repositoryDestroy().
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
 /// @brief Open or create a Repository backed by SQLite.
@@ -101,6 +105,13 @@ SessionData repositoryGetBestRawWpm(Repository* repo);
 /// @param repo Repository instance.
 /// @return Average WPM, or 0.0 if no sessions.
 double repositoryGetAverageWpm(Repository* repo);
+
+/// @brief Retrieve sessions filtered by mode, most recent first.
+/// @param repo  Repository instance.
+/// @param mode  Mode string ("strict" or "flow").
+/// @param count Output: number of sessions returned.
+/// @return Heap-allocated array of SessionData (caller frees), or NULL on failure.
+SessionData* repositoryGetSessionsByMode(Repository* repo, const char* mode, size_t* count);
 
 #ifdef __cplusplus
 }

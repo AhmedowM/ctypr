@@ -25,6 +25,9 @@ typedef enum ContentMode {
     CONTENT_MODE_RANDOM_WORDS  ///< Words in random order (DB: ORDER BY RANDOM; File: shuffle)
 } ContentMode;
 
+/// @brief Thread safety: ContentProvider is NOT thread-safe. Callers must provide
+///        external synchronization when using the same instance from multiple threads.
+
 // ── Factory Functions ────────────────────────────────────────────────────────
 
 /// @brief Create a ContentProvider from a string.

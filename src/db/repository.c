@@ -6,7 +6,20 @@
 #include <string.h>
 
 #ifdef _WIN32
+#include <windows.h>
+typedef SRWLOCK ctypr_mutex_t;
+#define MUTEX_INIT(m)   InitializeSRWLock(m)
+#define MUTEX_LOCK(m)   AcquireSRWLockExclusive(m)
+#define MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
+#define MUTEX_DESTROY(m) ((void)0)
 #define strdup _strdup
+#else
+#include <pthread.h>
+typedef pthread_mutex_t ctypr_mutex_t;
+#define MUTEX_INIT(m)   pthread_mutex_init(m, NULL)
+#define MUTEX_LOCK(m)   pthread_mutex_lock(m)
+#define MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#define MUTEX_DESTROY(m) pthread_mutex_destroy(m)
 #endif
 
 #include <sqlite3.h>
@@ -17,6 +30,7 @@ typedef struct Repository {
     Logger* logger;
     const char* name;
     sqlite3* db;
+    ctypr_mutex_t lock;
 } Repository;
 
 static const char* SCHEMA =
@@ -101,21 +115,27 @@ Repository* repositoryCreate(const char* dbPath) {
     repo->logger = NULL;
     repo->name = "Repository";
     repo->db = NULL;
+    MUTEX_INIT(&repo->lock);
     
     return repo;
 }
 
 void repositorySetLogger(Repository* self, Logger* logger) {
-    if (self) self->logger = logger;
+    if (!self) return;
+    MUTEX_LOCK(&self->lock);
+    self->logger = logger;
+    MUTEX_UNLOCK(&self->lock);
 }
 
 void repositoryDestroy(Repository* repo) {
-    if (repo) {
-        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository destroyed");
-        if (repo->db) sqlite3_close(repo->db);
-        free(repo->dbPath);
-        free(repo);
-    }
+    if (!repo) return;
+    MUTEX_LOCK(&repo->lock);
+    if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository destroyed");
+    if (repo->db) sqlite3_close(repo->db);
+    MUTEX_UNLOCK(&repo->lock);
+    MUTEX_DESTROY(&repo->lock);
+    free(repo->dbPath);
+    free(repo);
 }
 
 static int rowToSessionData(sqlite3_stmt* stmt, SessionData* data) {
@@ -148,7 +168,11 @@ static int rowToSessionData(sqlite3_stmt* stmt, SessionData* data) {
 
 int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
     if (!repo || !data) return -1;
-    if (ensureInitialized(repo) != 0) return -1;
+    MUTEX_LOCK(&repo->lock);
+    if (ensureInitialized(repo) != 0) {
+        MUTEX_UNLOCK(&repo->lock);
+        return -1;
+    }
     
     const char* sql = "INSERT INTO sessions (timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
     
@@ -156,6 +180,7 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - prepare failed");
+        MUTEX_UNLOCK(&repo->lock);
         return -1;
     }
     
@@ -169,16 +194,17 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data) {
     sqlite3_bind_double(stmt, 8, data->accuracy);
     
     rc = sqlite3_step(stmt);
+    int64_t id = -1;
     if (rc == SQLITE_DONE) {
-        int64_t id = sqlite3_last_insert_rowid(repo->db);
-        sqlite3_finalize(stmt);
+        id = sqlite3_last_insert_rowid(repo->db);
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_DEBUG, "Repository: session saved");
-        return id;
+    } else {
+        if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - step failed");
     }
     
-    if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_ERROR, "Repository: saveSession - step failed");
     sqlite3_finalize(stmt);
-    return -1;
+    MUTEX_UNLOCK(&repo->lock);
+    return id;
 }
 
 SessionData repositoryGetSession(Repository* repo, int64_t id) {
@@ -186,13 +212,18 @@ SessionData repositoryGetSession(Repository* repo, int64_t id) {
     memset(&data, 0, sizeof(data));
     
     if (!repo) return data;
-    if (ensureInitialized(repo) != 0) return data;
+    MUTEX_LOCK(&repo->lock);
+    if (ensureInitialized(repo) != 0) {
+        MUTEX_UNLOCK(&repo->lock);
+        return data;
+    }
     
     const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions WHERE id = ?";
     
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
+        MUTEX_UNLOCK(&repo->lock);
         return data;
     }
     
@@ -203,13 +234,16 @@ SessionData repositoryGetSession(Repository* repo, int64_t id) {
     }
     
     sqlite3_finalize(stmt);
+    MUTEX_UNLOCK(&repo->lock);
     return data;
 }
 
 SessionData* repositoryGetAll(Repository* repo, size_t* count) {
     if (!repo || !count) return NULL;
+    MUTEX_LOCK(&repo->lock);
     if (ensureInitialized(repo) != 0) {
         *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
         return NULL;
     }
     
@@ -219,6 +253,7 @@ SessionData* repositoryGetAll(Repository* repo, size_t* count) {
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
         return NULL;
     }
     
@@ -228,6 +263,7 @@ SessionData* repositoryGetAll(Repository* repo, size_t* count) {
     if (!results) {
         sqlite3_finalize(stmt);
         *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
         return NULL;
     }
     
@@ -239,6 +275,7 @@ SessionData* repositoryGetAll(Repository* repo, size_t* count) {
                 free(results);
                 sqlite3_finalize(stmt);
                 *count = 0;
+                MUTEX_UNLOCK(&repo->lock);
                 return NULL;
             }
             results = tmp;
@@ -249,13 +286,16 @@ SessionData* repositoryGetAll(Repository* repo, size_t* count) {
     
     sqlite3_finalize(stmt);
     *count = n;
+    MUTEX_UNLOCK(&repo->lock);
     return results;
 }
 
 SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count) {
     if (!repo || !count) return NULL;
+    MUTEX_LOCK(&repo->lock);
     if (ensureInitialized(repo) != 0) {
         *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
         return NULL;
     }
     
@@ -265,6 +305,7 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
         return NULL;
     }
     
@@ -276,6 +317,7 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
     if (!results) {
         sqlite3_finalize(stmt);
         *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
         return NULL;
     }
     
@@ -287,6 +329,7 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
                 free(results);
                 sqlite3_finalize(stmt);
                 *count = 0;
+                MUTEX_UNLOCK(&repo->lock);
                 return NULL;
             }
             results = tmp;
@@ -297,18 +340,24 @@ SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count)
     
     sqlite3_finalize(stmt);
     *count = n;
+    MUTEX_UNLOCK(&repo->lock);
     return results;
 }
 
 int64_t repositoryGetCount(Repository* repo) {
     if (!repo) return 0;
-    if (ensureInitialized(repo) != 0) return 0;
+    MUTEX_LOCK(&repo->lock);
+    if (ensureInitialized(repo) != 0) {
+        MUTEX_UNLOCK(&repo->lock);
+        return 0;
+    }
     
     const char* sql = "SELECT COUNT(*) FROM sessions";
     
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
+        MUTEX_UNLOCK(&repo->lock);
         return 0;
     }
     
@@ -318,18 +367,24 @@ int64_t repositoryGetCount(Repository* repo) {
     }
     
     sqlite3_finalize(stmt);
+    MUTEX_UNLOCK(&repo->lock);
     return count;
 }
 
 bool repositoryDeleteSession(Repository* repo, int64_t id) {
     if (!repo) return false;
-    if (ensureInitialized(repo) != 0) return false;
+    MUTEX_LOCK(&repo->lock);
+    if (ensureInitialized(repo) != 0) {
+        MUTEX_UNLOCK(&repo->lock);
+        return false;
+    }
     
     const char* sql = "DELETE FROM sessions WHERE id = ?";
     
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
+        MUTEX_UNLOCK(&repo->lock);
         return false;
     }
     
@@ -345,12 +400,17 @@ bool repositoryDeleteSession(Repository* repo, int64_t id) {
         else loggerLog(repo->logger, LOG_LEVEL_WARNING, "Repository: deleteSession - session not found");
     }
     
+    MUTEX_UNLOCK(&repo->lock);
     return success;
 }
 
 void repositoryClearAll(Repository* repo) {
     if (!repo) return;
-    if (ensureInitialized(repo) != 0) return;
+    MUTEX_LOCK(&repo->lock);
+    if (ensureInitialized(repo) != 0) {
+        MUTEX_UNLOCK(&repo->lock);
+        return;
+    }
     
     const char* sql = "DELETE FROM sessions";
     
@@ -362,63 +422,72 @@ void repositoryClearAll(Repository* repo) {
     } else {
         if (repo->logger) loggerLog(repo->logger, LOG_LEVEL_WARNING, "Repository: all sessions cleared");
     }
+    
+    MUTEX_UNLOCK(&repo->lock);
+}
+
+static SessionData getBestByColumn(Repository* repo, const char* column) {
+    SessionData data;
+    memset(&data, 0, sizeof(data));
+    
+    if (!repo) return data;
+    if (ensureInitialized(repo) != 0) return data;
+    
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY %s DESC LIMIT 1",
+        column);
+    
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) return data;
+    
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        rowToSessionData(stmt, &data);
+    }
+    
+    sqlite3_finalize(stmt);
+    return data;
 }
 
 SessionData repositoryGetBestWpm(Repository* repo) {
-    SessionData data;
-    memset(&data, 0, sizeof(data));
-    
-    if (!repo) return data;
-    if (ensureInitialized(repo) != 0) return data;
-    
-    const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY wpm DESC LIMIT 1";
-    
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
+    if (!repo) {
+        SessionData data;
+        memset(&data, 0, sizeof(data));
         return data;
     }
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        rowToSessionData(stmt, &data);
-    }
-    
-    sqlite3_finalize(stmt);
-    return data;
+    MUTEX_LOCK(&repo->lock);
+    SessionData result = getBestByColumn(repo, "wpm");
+    MUTEX_UNLOCK(&repo->lock);
+    return result;
 }
 
 SessionData repositoryGetBestRawWpm(Repository* repo) {
-    SessionData data;
-    memset(&data, 0, sizeof(data));
-    
-    if (!repo) return data;
-    if (ensureInitialized(repo) != 0) return data;
-    
-    const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY wpm_raw DESC LIMIT 1";
-    
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
+    if (!repo) {
+        SessionData data;
+        memset(&data, 0, sizeof(data));
         return data;
     }
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        rowToSessionData(stmt, &data);
-    }
-    
-    sqlite3_finalize(stmt);
-    return data;
+    MUTEX_LOCK(&repo->lock);
+    SessionData result = getBestByColumn(repo, "wpm_raw");
+    MUTEX_UNLOCK(&repo->lock);
+    return result;
 }
 
 double repositoryGetAverageWpm(Repository* repo) {
     if (!repo) return 0.0;
-    if (ensureInitialized(repo) != 0) return 0.0;
+    MUTEX_LOCK(&repo->lock);
+    if (ensureInitialized(repo) != 0) {
+        MUTEX_UNLOCK(&repo->lock);
+        return 0.0;
+    }
     
     const char* sql = "SELECT AVG(wpm) FROM sessions";
     
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
+        MUTEX_UNLOCK(&repo->lock);
         return 0.0;
     }
     
@@ -428,5 +497,60 @@ double repositoryGetAverageWpm(Repository* repo) {
     }
     
     sqlite3_finalize(stmt);
+    MUTEX_UNLOCK(&repo->lock);
     return avg;
+}
+
+SessionData* repositoryGetSessionsByMode(Repository* repo, const char* mode, size_t* count) {
+    if (!repo || !mode || !count) return NULL;
+    MUTEX_LOCK(&repo->lock);
+    if (ensureInitialized(repo) != 0) {
+        *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
+        return NULL;
+    }
+    
+    const char* sql = "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions WHERE mode = ? ORDER BY id DESC";
+    
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
+        return NULL;
+    }
+    
+    sqlite3_bind_text(stmt, 1, mode, -1, SQLITE_STATIC);
+    
+    size_t n = 0;
+    size_t capacity = 16;
+    SessionData* results = malloc(capacity * sizeof(SessionData));
+    if (!results) {
+        sqlite3_finalize(stmt);
+        *count = 0;
+        MUTEX_UNLOCK(&repo->lock);
+        return NULL;
+    }
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (n >= capacity) {
+            capacity *= 2;
+            SessionData* tmp = realloc(results, capacity * sizeof(SessionData));
+            if (!tmp) {
+                free(results);
+                sqlite3_finalize(stmt);
+                *count = 0;
+                MUTEX_UNLOCK(&repo->lock);
+                return NULL;
+            }
+            results = tmp;
+        }
+        rowToSessionData(stmt, &results[n]);
+        n++;
+    }
+    
+    sqlite3_finalize(stmt);
+    *count = n;
+    MUTEX_UNLOCK(&repo->lock);
+    return results;
 }
