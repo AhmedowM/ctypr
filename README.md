@@ -15,7 +15,7 @@ A C17 library for typing sessions — speed, accuracy, timing. Embed it in tutor
 - **Callbacks**: 11 event hooks — started, stopped, keystrokes, backspace, timeout, segment done, error
 - **Snapshot**: single call gets full session state (text, cursor, incorrect flags, stats) for rendering
 - **Logger**: stdout and/or file, configurable levels, thread-safe
-- **Content DB pipeline**: Python scripts (in `src/db/scripts/`) to build `sentences.db` and `words.db`
+- **Content DB pipeline**: Python scripts (in `tools/content-db/`) to build `sentences.db` and `words.db`
 - **Zero runtime deps**: SQLite downloads and builds via CMake
 
 ---
@@ -121,7 +121,7 @@ int main(void) {
 
 ### Database content
 
-Loads words from a SQLite database built by the [pipeline](src/db/scripts/):
+Loads words from a SQLite database built by the [pipeline](tools/content-db/):
 
 ```c
 ContentProvider* cp = contentProviderFromDatabase("words.db");
@@ -198,10 +198,11 @@ src/
   core/       engine, state, stats, snapshot, signals, errors, version
   content/    string, file, database, web providers
   format/     text chunking
-  db/         SQLite repository + content database pipeline (Python scripts)
+  db/         SQLite repository
   utils/      logger
-tests/        5 test suites (engine, content, formatter, repository, logger)
+tests/        6 test suites (engine, content, formatter, repository, logger, concurrency)
 examples/     usage.c — full API walkthrough (callbacks, signals, stats, DB)
+tools/        Content DB pipeline (Python scripts)
 docs/         Doxygen-generated API docs (GitHub Pages), markdown reference
 ```
 
