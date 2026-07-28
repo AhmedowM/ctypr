@@ -192,6 +192,7 @@ int64_t repositorySaveSession(Repository* repo, const SessionData* data);
 SessionData repositoryGetSession(Repository* repo, int64_t id);
 SessionData* repositoryGetAll(Repository* repo, size_t* count);
 SessionData* repositoryGetRecent(Repository* repo, int64_t limit, size_t* count);
+SessionData* repositoryGetSessionsByMode(Repository* repo, const char* mode, size_t* count);
 int64_t repositoryGetCount(Repository* repo);
 bool repositoryDeleteSession(Repository* repo, int64_t id);
 void repositoryClearAll(Repository* repo);

@@ -184,6 +184,7 @@ void contentProviderSetWordLengthRange(cp, min_len, max_len);
 // SQLite persistence
 Repository* repositoryCreate(const char* dbPath);
 int64_t repositorySaveSession(Repository* repo, const SessionData* data);
+SessionData* repositoryGetSessionsByMode(Repository* repo, const char* mode, size_t* count);
 ```
 
 ## Project Layout
