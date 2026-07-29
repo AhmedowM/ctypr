@@ -10,7 +10,8 @@
 #include "content.h"
 #include "repository.h"
 
-#include <stdint.h>
+#include "engine_internal.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,24 +19,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
-typedef LARGE_INTEGER ctypr_time_t;
-#else
-#include <time.h>
-typedef struct timespec ctypr_time_t;
 #endif
-
-typedef struct Session {
-    char text[4096];
-    size_t length;
-    uint32_t currentIndex;
-    uint8_t incorrectKeystrokesBitmap[4096];
-
-    ctypr_time_t segmentStartTime;
-    ctypr_time_t segmentEndTime;
-    int64_t accumulatedTimeMs;
-    bool isTimingStarted;
-    char cachedTimestamp[20];
-} Session;
 
 static void getCurrentTime(ctypr_time_t* t) {
 #ifdef _WIN32
@@ -50,6 +34,7 @@ static int64_t timeDiffMs(ctypr_time_t* end, ctypr_time_t* start) {
     static LARGE_INTEGER freq = {0};
     if (freq.QuadPart == 0) {
         QueryPerformanceFrequency(&freq);
+        if (freq.QuadPart == 0) freq.QuadPart = 1;
     }
     return (int64_t)((end->QuadPart - start->QuadPart) * 1000LL / freq.QuadPart);
 #else
@@ -67,8 +52,10 @@ void updateTime(Session* session) {
     if (!session) return;
     if (!session->isTimingStarted) return;
     getCurrentTime(&session->segmentEndTime);
-    session->accumulatedTimeMs += timeDiffMs(&session->segmentEndTime, &session->segmentStartTime);
-    if (session->accumulatedTimeMs < 0) { session->accumulatedTimeMs = 0; }
+    int64_t diff = timeDiffMs(&session->segmentEndTime, &session->segmentStartTime);
+    if (diff < 0) diff = 0;
+    session->accumulatedTimeMs += diff;
+    if (session->accumulatedTimeMs < 0) session->accumulatedTimeMs = 0;
     session->segmentStartTime = session->segmentEndTime;
 }
 
@@ -95,6 +82,11 @@ typedef struct Engine {
     bool autoSaveEnabled;
 } Engine;
 
+Session* engineGetSession(Engine* self) {
+    if (!self) return NULL;
+    return self->session;
+}
+
 static const char* modeToString(EngineMode mode) {
     switch (mode) {
         case StrictMode: return "strict";
@@ -107,12 +99,14 @@ static void cacheTimestamp(char* buf, size_t size) {
     time_t now = time(NULL);
 #ifdef _WIN32
     struct tm tm_info;
-    localtime_s(&tm_info, &now);
-    strftime(buf, size, "%Y-%m-%d %H:%M:%S", &tm_info);
+    gmtime_s(&tm_info, &now);
+    /* Note: No Z suffix — buffer is exactly 19 chars + NUL. Timestamps are UTC per gmtime_s/gmtime_r. */
+    strftime(buf, size, "%Y-%m-%dT%H:%M:%S", &tm_info);
 #else
     struct tm tm_info;
-    localtime_r(&now, &tm_info);
-    strftime(buf, size, "%Y-%m-%d %H:%M:%S", &tm_info);
+    gmtime_r(&now, &tm_info);
+    /* Note: No Z suffix — buffer is exactly 19 chars + NUL. Timestamps are UTC per gmtime_s/gmtime_r. */
+    strftime(buf, size, "%Y-%m-%dT%H:%M:%S", &tm_info);
 #endif
 }
 
@@ -308,6 +302,12 @@ void engineStart(Engine *self) {
         memset(&self->stats, 0, sizeof(SessionStats));
         snprintf(self->session->text, sizeof(self->session->text), "%s", chunk.text);
         self->session->length = strlen(self->session->text);
+        if (self->session->length >= sizeof(self->session->text)) {
+            self->lastError = ENGINE_ERROR_CONTENT;
+            self->state = ENGINE_ERROR;
+            if (self->logger) loggerLog(self->logger, LOG_LEVEL_ERROR, "engineStart: content exceeds buffer size");
+            return;
+        }
         self->session->currentIndex = 0;
         getCurrentTime(&self->session->segmentStartTime);
         self->session->isTimingStarted = true;
@@ -410,7 +410,8 @@ static void engineKeyPressInternal(Engine *self, char key, bool advanceAlways) {
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Correct key");
         signalEmit(&self->onCorrectKeystroke, self);
     } else {
-        self->session->incorrectKeystrokesBitmap[self->session->currentIndex] = 1;
+        if (self->session->currentIndex < sizeof(self->session->incorrectKeystrokesBitmap))
+            self->session->incorrectKeystrokesBitmap[self->session->currentIndex] = 1;
         self->stats.incorrectKeystrokes++;
         if (self->logger) loggerLog(self->logger, LOG_LEVEL_DEBUG, "Incorrect key");
         signalEmit(&self->onIncorrectKeystroke, self);
@@ -617,9 +618,6 @@ SessionStats engineGetStats(Engine* engine) {
     memset(&stats, 0, sizeof(SessionStats));
     if (!engine || !engine->session) {
         return stats;
-    }
-    if (engine->state == ENGINE_RUNNING && engine->session->isTimingStarted) {
-        updateTime(engine->session);
     }
     stats.totalKeystrokes = engine->stats.totalKeystrokes;
     stats.correctKeystrokes = engine->stats.correctKeystrokes;

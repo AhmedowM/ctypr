@@ -43,6 +43,18 @@ static int test_count = 0;
            tests_passed, tests_failed, test_count); \
     return tests_failed > 0 ? 1 : 0
 
+#ifdef _WIN32
+static void buildTestDbPath(char *buf, size_t size, const char *prefix) {
+    snprintf(buf, size, "%s_%lld_%lld.db", prefix, (long long)time(NULL), (long long)GetTickCount64());
+}
+#else
+static void buildTestDbPath(char *buf, size_t size, const char *prefix) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    snprintf(buf, size, "%s_%lld_%ld.db", prefix, (long long)ts.tv_sec, (long)ts.tv_nsec);
+}
+#endif
+
 /* Declare TEST_DB_PATH, cleanupTestDb(), setupTestDbPath() with a prefix string.
    Example: TEST_DB_HELPERS("test_repository") */
 #define TEST_DB_HELPERS(prefix) \
@@ -56,7 +68,7 @@ static void cleanupTestDb(void) { \
 } \
 \
 static void setupTestDbPath(void) { \
-    snprintf(TEST_DB_PATH, sizeof(TEST_DB_PATH), prefix "_%lld.db", (long long)time(NULL)); \
+    buildTestDbPath(TEST_DB_PATH, sizeof(TEST_DB_PATH), prefix); \
 }
 
 #endif

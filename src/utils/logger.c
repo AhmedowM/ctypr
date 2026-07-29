@@ -82,7 +82,7 @@ bool loggerAddFile(Logger *logger, const char *filepath) {
 void loggerLog(Logger* logger, LogLevel level, const char* message) {
     if (!logger) return;
     MUTEX_LOCK(&logger->lock);
-    if (level < logger->currentLevel || level > LOG_LEVEL_ERROR) {
+    if (level < logger->currentLevel || level == LOG_LEVEL_NONE) {
         MUTEX_UNLOCK(&logger->lock);
         return;
     }

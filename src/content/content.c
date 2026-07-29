@@ -233,9 +233,12 @@ static ContentChunk _cpGetFile(ContentProvider* cp) {
     fclose(f);
 
     if (cp->mode == CONTENT_MODE_RANDOM_WORDS) {
+        char temp[4096];
+        snprintf(temp, sizeof(temp), "%s", cp->text);
+
         char* words[2048];
         int wordCount = 0;
-        char* token = strtok(cp->text, " \t\n\r");
+        char* token = strtok(temp, " \t\n\r");
         while (token && wordCount < 2048) {
             words[wordCount++] = token;
             token = strtok(NULL, " \t\n\r");

@@ -3,7 +3,7 @@
 
 #include "signal.h"
 
-#define SIGNAL_MAX_SLOTS 5
+#define SIGNAL_MAX_SLOTS 16
 
 typedef struct SignalSlot {
     bool active;

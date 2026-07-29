@@ -29,8 +29,11 @@ typedef struct EngineConfig {
     bool autoSaveEnabled;              ///< Whether auto-save is active
 } EngineConfig;
 
-/// @brief Thread safety: Engine is NOT thread-safe. Callers must provide
-///        external synchronization when using the same instance from multiple threads.
+/// @brief Thread safety: The Engine struct is strictly single-threaded.
+///        All engine functions must be called from the same thread.
+///        Callers MUST provide external synchronization (e.g. a mutex)
+///        when using the same instance from multiple threads.
+///        Violations cause data races and undefined behaviour.
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 

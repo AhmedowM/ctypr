@@ -3,6 +3,7 @@
 #endif
 
 #include "engine.h"
+#include "engine_internal.h"
 #include "callback.h"
 #include "error.h"
 #include "event.h"
@@ -728,13 +729,13 @@ static void test_max_callbacks(void) {
     CallbackFlags flags;
     reset_flags(&flags);
     
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 16; i++) {
         int reg = engineOnStarted(e, on_start, &flags);
         ASSERT(reg >= 0, "registration should succeed");
     }
     
     int reg = engineOnStarted(e, on_start, &flags);
-    ASSERT(reg < 0, "6th registration should fail");
+    ASSERT(reg < 0, "17th registration should fail");
     
     engineDestroy(e);
     PASS();
@@ -748,7 +749,7 @@ static void test_multi_event_slots(void) {
     CallbackFlags flags;
     reset_flags(&flags);
     
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 16; i++) {
         ASSERT(engineOnStarted(e, on_start, &flags) >= 0, "fill STARTED slots");
     }
     ASSERT(engineOnStarted(e, on_start, &flags) < 0, "STARTED full");
@@ -969,6 +970,41 @@ static void test_timeout_backspace_checks_timeout(void) {
     ASSERT(stats.totalKeystrokes == 2, "keystrokes should still be 2 (backspace not processed)");
     
     engineDestroy(e);
+    PASS();
+}
+
+/* Content at the 4095-char boundary fits in the Session text buffer
+   and starts successfully. */
+static void test_content_4095_boundary(void) {
+    TEST("Content: 4095-char boundary starts successfully");
+    size_t len = 4095;
+    char* bigStr = malloc(len + 1);
+    ASSERT(bigStr != NULL, "malloc failed");
+    memset(bigStr, 'A', len);
+    bigStr[len] = '\0';
+
+    ContentProvider* prov = contentProviderFromString(bigStr);
+    ASSERT(prov != NULL, "contentProviderFromString failed");
+
+    EngineConfig config = {
+        .mode = StrictMode,
+        .timeout = 0,
+        .contentProvider = prov
+    };
+    Engine* e = engineCreate(&config);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "engine should be running with max-length content");
+
+    engineKeyPress(e, 'A');
+    SessionStats stats = engineGetStats(e);
+    ASSERT(stats.totalKeystrokes == 1, "should accept keystroke");
+    ASSERT(stats.correctKeystrokes == 1, "keystroke should be correct");
+
+    engineDestroy(e);
+    contentProviderDestroy(prov);
+    free(bigStr);
     PASS();
 }
 
@@ -1254,6 +1290,67 @@ static void test_segment_completed_not_on_user_stop(void) {
     PASS();
 }
 
+static void test_updateTime_clamps_negative_diff(void) {
+    TEST("updateTime clamps negative diff to zero");
+    Engine* e = createTestEngine(StrictMode, 0);
+    ASSERT(e != NULL, "engineCreate returned NULL");
+
+    engineStart(e);
+    ASSERT(engineIsRunning(e), "should be running");
+
+    Session* session = engineGetSession(e);
+    ASSERT(session != NULL, "session should not be NULL");
+    ASSERT(session->isTimingStarted, "timing should be started");
+    ASSERT(session->accumulatedTimeMs >= 0, "accumulatedTimeMs should be >= 0 initially");
+
+    updateTime(session);
+
+    int64_t expected = session->accumulatedTimeMs;
+    ASSERT(expected >= 0, "accumulatedTimeMs should be >= 0 after normal updateTime");
+
+    /* Force a negative diff by setting segmentStartTime just ahead of segmentEndTime.
+       Using a small offset avoids int64 overflow in timeDiffMs' internal multiplication. */
+#ifdef _WIN32
+    session->segmentStartTime.QuadPart = session->segmentEndTime.QuadPart + 100000;
+#else
+    session->segmentStartTime.tv_nsec += 100000000;
+    if (session->segmentStartTime.tv_nsec >= 1000000000) {
+        session->segmentStartTime.tv_nsec -= 1000000000;
+        session->segmentStartTime.tv_sec++;
+    }
+#endif
+
+    updateTime(session);
+
+    ASSERT(session->accumulatedTimeMs == expected,
+           "accumulatedTimeMs should be unchanged after negative diff is clamped to 0");
+    ASSERT(session->accumulatedTimeMs >= 0,
+           "accumulatedTimeMs should never be negative after updateTime");
+
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_flow_backspace_at_zero(void) {
+    TEST("Flow mode: backspace at position 0 is no-op (guard coverage)");
+    Engine* e = createTestEngine(FlowMode, 0);
+    engineStart(e);
+    engineBackspacePress(e);
+    ASSERT(engineIsRunning(e), "should still be running");
+    engineDestroy(e);
+    PASS();
+}
+
+static void test_keypress_utf8_byte(void) {
+    TEST("Engine: keypress with byte > 127 does not crash");
+    Engine* e = createTestEngine(StrictMode, 0);
+    engineStart(e);
+    engineKeyPress(e, (char)0xE9);
+    ASSERT(engineIsRunning(e), "should still be running");
+    engineDestroy(e);
+    PASS();
+}
+
 int main(void) {
     printf("=== ctypr Engine Test Suite ===\n\n");
     
@@ -1322,7 +1419,11 @@ int main(void) {
     test_timeout_pause_does_not_accumulate();
     test_engine_tick();
     test_timeout_backspace_checks_timeout();
+    test_content_4095_boundary();
     test_auto_save_session();
+    test_updateTime_clamps_negative_diff();
+    test_flow_backspace_at_zero();
+    test_keypress_utf8_byte();
     
     contentProviderDestroy(sharedTestContent);
     

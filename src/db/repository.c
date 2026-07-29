@@ -45,6 +45,7 @@ static char* getFullPath(const char* dbPath) {
                 snprintf(full, len + 1, "%s/%s", home, dbPath + 1);
                 return full;
             }
+            fprintf(stderr, "[WARNING] Repository: getFullPath malloc failed, using fallback path\n");
         }
         return strdup("typr.db");
     }
@@ -54,11 +55,7 @@ static char* getFullPath(const char* dbPath) {
 static int ensureInitialized(Repository* repo) {
     if (repo->initialized) return 0;
     
-    char* fullPath = getFullPath(repo->dbPath);
-    if (!fullPath) return -1;
-    
-    int rc = sqlite3_open(fullPath, &repo->db);
-    free(fullPath);
+    int rc = sqlite3_open(repo->dbPath, &repo->db);
     
     if (rc != SQLITE_OK || repo->db == NULL) {
         if (repo->db) { sqlite3_close(repo->db); repo->db = NULL; }
@@ -88,7 +85,7 @@ Repository* repositoryCreate(const char* dbPath) {
         return NULL;
     }
     
-    repo->dbPath = strdup(dbPath ? dbPath : "typr.db");
+    repo->dbPath = getFullPath(dbPath ? dbPath : "typr.db");
     if (!repo->dbPath) {
         fprintf(stderr, "[ERROR] Failed to allocate dbPath for Repository\n");
         free(repo);
@@ -409,26 +406,28 @@ void repositoryClearAll(Repository* repo) {
     MUTEX_UNLOCK(&repo->lock);
 }
 
-static SessionData getBestByColumn(Repository* repo, const char* column) {
+typedef enum { ORDER_COL_WPM, ORDER_COL_WPM_RAW } RepositoryOrderColumn;
+static const char* ORDER_COLUMNS[] = { "wpm", "wpm_raw" };
+
+static SessionData getBestByColumn(Repository* repo, RepositoryOrderColumn col) {
     SessionData data;
     memset(&data, 0, sizeof(data));
-    
     if (!repo) return data;
     if (ensureInitialized(repo) != 0) return data;
-    
+
     char sql[256];
     snprintf(sql, sizeof(sql),
         "SELECT id, timestamp, mode, total_chars, correct_chars, duration_ms, wpm, wpm_raw, accuracy FROM sessions ORDER BY %s DESC LIMIT 1",
-        column);
-    
+        ORDER_COLUMNS[(int)col]);
+
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(repo->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) return data;
-    
+
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         rowToSessionData(stmt, &data);
     }
-    
+
     sqlite3_finalize(stmt);
     return data;
 }
@@ -440,7 +439,7 @@ SessionData repositoryGetBestWpm(Repository* repo) {
         return data;
     }
     MUTEX_LOCK(&repo->lock);
-    SessionData result = getBestByColumn(repo, "wpm");
+    SessionData result = getBestByColumn(repo, ORDER_COL_WPM);
     MUTEX_UNLOCK(&repo->lock);
     return result;
 }
@@ -452,7 +451,7 @@ SessionData repositoryGetBestRawWpm(Repository* repo) {
         return data;
     }
     MUTEX_LOCK(&repo->lock);
-    SessionData result = getBestByColumn(repo, "wpm_raw");
+    SessionData result = getBestByColumn(repo, ORDER_COL_WPM_RAW);
     MUTEX_UNLOCK(&repo->lock);
     return result;
 }
